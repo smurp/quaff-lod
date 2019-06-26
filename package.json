@@ -1,0 +1,31 @@
+{
+  "name": "quaff-lod",
+  "version": "0.5.0",
+  "description": "a streaming LOD worker",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon --watch  src/quaff-lod-worker.js -x 'npx browserify src/quaff-lod-worker.js -o quaff-lod-worker-bundle.js'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smurp/quaff-lod.git"
+  },
+  "keywords": [
+    "lod",
+    "json-ld",
+    "Web",
+    "Worker",
+    "streaming"
+  ],
+  "author": "Shawn Murphy",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/smurp/quaff-lod/issues"
+  },
+  "homepage": "https://github.com/smurp/quaff-lod#readme",
+  "devDependencies": {
+    "browserify": "^16.2.3",
+    "jsonld-streaming-parser": "^1.1.0",
+    "nodemon": "^1.19.1"
+  }
+}
