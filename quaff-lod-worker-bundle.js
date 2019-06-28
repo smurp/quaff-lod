@@ -2881,7 +2881,7 @@ module.exports = Array.isArray || function (arr) {
 require('whatwg-fetch');
 module.exports = self.fetch.bind(self);
 
-},{"whatwg-fetch":63}],19:[function(require,module,exports){
+},{"whatwg-fetch":77}],19:[function(require,module,exports){
 "use strict";
 function __export(m) {
     for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
@@ -3314,7 +3314,7 @@ ContextParser.CONTAINERS = [
 ];
 exports.ContextParser = ContextParser;
 
-},{"./FetchDocumentLoader":21,"isomorphic-fetch":18,"relative-to-absolute-iri":57}],21:[function(require,module,exports){
+},{"./FetchDocumentLoader":21,"isomorphic-fetch":18,"relative-to-absolute-iri":69}],21:[function(require,module,exports){
 "use strict";
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -3714,7 +3714,7 @@ JsonLdParser.ENTRY_HANDLERS = [
 ];
 exports.JsonLdParser = JsonLdParser;
 
-},{"./ParsingContext":25,"./Util":26,"./entryhandler/EntryHandlerArrayValue":29,"./entryhandler/EntryHandlerContainer":30,"./entryhandler/EntryHandlerInvalidFallback":31,"./entryhandler/EntryHandlerPredicate":32,"./entryhandler/keyword/EntryHandlerKeywordContext":34,"./entryhandler/keyword/EntryHandlerKeywordGraph":35,"./entryhandler/keyword/EntryHandlerKeywordId":36,"./entryhandler/keyword/EntryHandlerKeywordType":37,"./entryhandler/keyword/EntryHandlerKeywordUnknownFallback":38,"./entryhandler/keyword/EntryHandlerKeywordValue":39,"jsonparse":40,"stream":60}],25:[function(require,module,exports){
+},{"./ParsingContext":25,"./Util":26,"./entryhandler/EntryHandlerArrayValue":29,"./entryhandler/EntryHandlerContainer":30,"./entryhandler/EntryHandlerInvalidFallback":31,"./entryhandler/EntryHandlerPredicate":32,"./entryhandler/keyword/EntryHandlerKeywordContext":34,"./entryhandler/keyword/EntryHandlerKeywordGraph":35,"./entryhandler/keyword/EntryHandlerKeywordId":36,"./entryhandler/keyword/EntryHandlerKeywordType":37,"./entryhandler/keyword/EntryHandlerKeywordUnknownFallback":38,"./entryhandler/keyword/EntryHandlerKeywordValue":39,"jsonparse":40,"stream":73}],25:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 const jsonld_context_parser_1 = require("jsonld-context-parser");
@@ -5324,6 +5324,3017 @@ module.exports = Parser;
 
 }).call(this,require("buffer").Buffer)
 },{"buffer":11}],41:[function(require,module,exports){
+module.exports = {
+  DataFactory:  require('./lib/N3DataFactory'),
+  Lexer:        require('./lib/N3Lexer'),
+  Parser:       require('./lib/N3Parser'),
+  Writer:       require('./lib/N3Writer'),
+  Store:        require('./lib/N3Store'),
+  StreamParser: require('./lib/N3StreamParser'),
+  StreamWriter: require('./lib/N3StreamWriter'),
+  Util:         require('./lib/N3Util'),
+};
+
+},{"./lib/N3DataFactory":43,"./lib/N3Lexer":44,"./lib/N3Parser":45,"./lib/N3Store":46,"./lib/N3StreamParser":47,"./lib/N3StreamWriter":48,"./lib/N3Util":49,"./lib/N3Writer":50}],42:[function(require,module,exports){
+var RDF  = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+    XSD  = 'http://www.w3.org/2001/XMLSchema#',
+    SWAP = 'http://www.w3.org/2000/10/swap/';
+
+module.exports = {
+  xsd: {
+    decimal: XSD + 'decimal',
+    boolean: XSD + 'boolean',
+    double:  XSD + 'double',
+    integer: XSD + 'integer',
+    string:  XSD + 'string',
+  },
+  rdf: {
+    type:       RDF + 'type',
+    nil:        RDF + 'nil',
+    first:      RDF + 'first',
+    rest:       RDF + 'rest',
+    langString: RDF + 'langString',
+  },
+  owl: {
+    sameAs: 'http://www.w3.org/2002/07/owl#sameAs',
+  },
+  r: {
+    forSome: SWAP + 'reify#forSome',
+    forAll:  SWAP + 'reify#forAll',
+  },
+  log: {
+    implies: SWAP + 'log#implies',
+  },
+};
+
+},{}],43:[function(require,module,exports){
+// N3.js implementations of the RDF/JS core data types
+// See https://github.com/rdfjs/representation-task-force/blob/master/interface-spec.md
+
+var namespaces = require('./IRIs');
+var rdf = namespaces.rdf,
+    xsd = namespaces.xsd;
+
+var DataFactory, DEFAULTGRAPH;
+
+var _blankNodeCounter = 0;
+
+class Term {
+  constructor(id) {
+    this.id = id;
+  }
+
+  // ### The value of this term
+  get value() {
+    return this.id;
+  }
+
+  // ### Returns whether this object represents the same term as the other
+  equals(other) {
+    // If both terms were created by this library,
+    // equality can be computed through ids
+    if (other instanceof Term)
+      return this.id === other.id;
+    // Otherwise, compare term type and value
+    return !!other && this.termType === other.termType &&
+                      this.value    === other.value;
+  }
+
+  // ### Returns a plain object representation of this term
+  toJSON() {
+    return {
+      termType: this.termType,
+      value:    this.value,
+    };
+  }
+}
+
+
+// ## NamedNode constructor
+class NamedNode extends Term {
+  // ### The term type of this term
+  get termType() {
+    return 'NamedNode';
+  }
+}
+
+// ## Literal constructor
+class Literal extends Term {
+  // ### The term type of this term
+  get termType() {
+    return 'Literal';
+  }
+
+  // ### The text value of this literal
+  get value() {
+    return this.id.substring(1, this.id.lastIndexOf('"'));
+  }
+
+  // ### The language of this literal
+  get language() {
+    // Find the last quotation mark (e.g., '"abc"@en-us')
+    var id = this.id, atPos = id.lastIndexOf('"') + 1;
+    // If "@" it follows, return the remaining substring; empty otherwise
+    return atPos < id.length && id[atPos++] === '@' ? id.substr(atPos).toLowerCase() : '';
+  }
+
+  // ### The datatype IRI of this literal
+  get datatype() {
+    return new NamedNode(this.datatypeString);
+  }
+
+  // ### The datatype string of this literal
+  get datatypeString() {
+    // Find the last quotation mark (e.g., '"abc"^^http://ex.org/types#t')
+    var id = this.id, dtPos = id.lastIndexOf('"') + 1, ch;
+    // If "^" it follows, return the remaining substring
+    return dtPos < id.length && (ch = id[dtPos]) === '^' ? id.substr(dtPos + 2) :
+           // If "@" follows, return rdf:langString; xsd:string otherwise
+           (ch !== '@' ? xsd.string : rdf.langString);
+  }
+
+  // ### Returns whether this object represents the same term as the other
+  equals(other) {
+    // If both literals were created by this library,
+    // equality can be computed through ids
+    if (other instanceof Literal)
+      return this.id === other.id;
+    // Otherwise, compare term type, value, language, and datatype
+    return !!other && !!other.datatype &&
+                      this.termType === other.termType &&
+                      this.value    === other.value    &&
+                      this.language === other.language &&
+                      this.datatype.value === other.datatype.value;
+  }
+
+  toJSON() {
+    return {
+      termType: this.termType,
+      value:    this.value,
+      language: this.language,
+      datatype: { termType: 'NamedNode', value: this.datatypeString },
+    };
+  }
+}
+
+// ## BlankNode constructor
+class BlankNode extends Term {
+  constructor(name) {
+    super('_:' + name);
+  }
+
+  // ### The term type of this term
+  get termType() {
+    return 'BlankNode';
+  }
+
+  // ### The name of this blank node
+  get value() {
+    return this.id.substr(2);
+  }
+}
+
+class Variable extends Term {
+  constructor(name) {
+    super('?' + name);
+  }
+
+  // ### The term type of this term
+  get termType() {
+    return 'Variable';
+  }
+
+  // ### The name of this variable
+  get value() {
+    return this.id.substr(1);
+  }
+}
+
+// ## DefaultGraph constructor
+class DefaultGraph extends Term {
+  constructor() {
+    super('');
+    return DEFAULTGRAPH || this;
+  }
+
+  // ### The term type of this term
+  get termType() {
+    return 'DefaultGraph';
+  }
+
+  // ### Returns whether this object represents the same term as the other
+  equals(other) {
+    // If both terms were created by this library,
+    // equality can be computed through strict equality;
+    // otherwise, compare term types.
+    return (this === other) || (!!other && (this.termType === other.termType));
+  }
+}
+
+// ## DefaultGraph singleton
+DEFAULTGRAPH = new DefaultGraph();
+
+
+// ### Constructs a term from the given internal string ID
+function fromId(id, factory) {
+  factory = factory || DataFactory;
+
+  // Falsy value or empty string indicate the default graph
+  if (!id)
+    return factory.defaultGraph();
+
+  // Identify the term type based on the first character
+  switch (id[0]) {
+  case '_': return factory.blankNode(id.substr(2));
+  case '?': return factory.variable(id.substr(1));
+  case '"':
+    // Shortcut for internal literals
+    if (factory === DataFactory)
+      return new Literal(id);
+    // Literal without datatype or language
+    if (id[id.length - 1] === '"')
+      return factory.literal(id.substr(1, id.length - 2));
+    // Literal with datatype or language
+    var endPos = id.lastIndexOf('"', id.length - 1);
+    return factory.literal(id.substr(1, endPos - 1),
+            id[endPos + 1] === '@' ? id.substr(endPos + 2)
+                                   : factory.namedNode(id.substr(endPos + 3)));
+  default:  return factory.namedNode(id);
+  }
+}
+
+// ### Constructs an internal string ID from the given term or ID string
+function toId(term) {
+  if (typeof term === 'string')
+    return term;
+  if (term instanceof Term)
+    return term.id;
+  if (!term)
+    return DEFAULTGRAPH.id;
+
+  // Term instantiated with another library
+  switch (term.termType) {
+  case 'NamedNode':    return term.value;
+  case 'BlankNode':    return '_:' + term.value;
+  case 'Variable':     return '?' + term.value;
+  case 'DefaultGraph': return '';
+  case 'Literal':      return '"' + term.value + '"' +
+    (term.language ? '@' + term.language :
+      (term.datatype && term.datatype.value !== xsd.string ? '^^' + term.datatype.value : ''));
+  default: throw new Error('Unexpected termType: ' + term.termType);
+  }
+}
+
+
+// ## Quad constructor
+class Quad {
+  constructor(subject, predicate, object, graph) {
+    this.subject   = subject;
+    this.predicate = predicate;
+    this.object    = object;
+    this.graph     = graph || DEFAULTGRAPH;
+  }
+
+  // ### Returns a plain object representation of this quad
+  toJSON() {
+    return {
+      subject:   this.subject.toJSON(),
+      predicate: this.predicate.toJSON(),
+      object:    this.object.toJSON(),
+      graph:     this.graph.toJSON(),
+    };
+  }
+
+  // ### Returns whether this object represents the same quad as the other
+  equals(other) {
+    return !!other && this.subject.equals(other.subject)     &&
+                      this.predicate.equals(other.predicate) &&
+                      this.object.equals(other.object)       &&
+                      this.graph.equals(other.graph);
+  }
+}
+
+
+// ## DataFactory functions
+
+// ### Creates an IRI
+function namedNode(iri) {
+  return new NamedNode(iri);
+}
+
+// ### Creates a blank node
+function blankNode(name) {
+  if (!name)
+    name = 'n3-' + _blankNodeCounter++;
+  return new BlankNode(name);
+}
+
+// ### Creates a literal
+function literal(value, languageOrDataType) {
+  // Create a language-tagged string
+  if (typeof languageOrDataType === 'string')
+    return new Literal('"' + value + '"@' + languageOrDataType.toLowerCase());
+
+  // Create a datatyped literal
+  var datatype = languageOrDataType && languageOrDataType.value || '';
+  if (!datatype) {
+    switch (typeof value) {
+    // Convert a boolean
+    case 'boolean':
+      datatype = xsd.boolean;
+      break;
+    // Convert an integer or double
+    case 'number':
+      if (Number.isFinite(value))
+        datatype = Number.isInteger(value) ? xsd.integer : xsd.double;
+      else {
+        datatype = xsd.double;
+        if (!Number.isNaN(value))
+          value = value > 0 ? 'INF' : '-INF';
+      }
+      break;
+    // No datatype, so convert a plain string
+    default:
+      return new Literal('"' + value + '"');
+    }
+  }
+  return new Literal('"' + value + '"^^' + datatype);
+}
+
+// ### Creates a variable
+function variable(name) {
+  return new Variable(name);
+}
+
+// ### Returns the default graph
+function defaultGraph() {
+  return DEFAULTGRAPH;
+}
+
+// ### Creates a quad
+function quad(subject, predicate, object, graph) {
+  return new Quad(subject, predicate, object, graph);
+}
+
+
+// ## Module exports
+module.exports = DataFactory = {
+  // ### Public factory functions
+  namedNode: namedNode,
+  blankNode: blankNode,
+  variable:  variable,
+  literal:   literal,
+  defaultGraph: defaultGraph,
+  quad:      quad,
+  triple:    quad,
+
+  // ### Internal datatype constructors
+  internal: {
+    Term:      Term,
+    NamedNode: NamedNode,
+    BlankNode: BlankNode,
+    Variable:  Variable,
+    Literal:   Literal,
+    DefaultGraph: DefaultGraph,
+    Quad:      Quad,
+    Triple:    Quad,
+    fromId:    fromId,
+    toId:      toId,
+  },
+};
+
+},{"./IRIs":42}],44:[function(require,module,exports){
+(function (Buffer,setImmediate){
+// **N3Lexer** tokenizes N3 documents.
+var xsd = require('./IRIs').xsd;
+
+var fromCharCode = String.fromCharCode;
+var immediately = typeof setImmediate === 'function' ? setImmediate :
+                  function setImmediate(func) { setTimeout(func, 0); };
+
+// Regular expression and replacement string to escape N3 strings.
+// Note how we catch invalid unicode sequences separately (they will trigger an error).
+var escapeSequence = /\\u([a-fA-F0-9]{4})|\\U([a-fA-F0-9]{8})|\\[uU]|\\(.)/g;
+var escapeReplacements = {
+  '\\': '\\', "'": "'", '"': '"',
+  'n': '\n', 'r': '\r', 't': '\t', 'f': '\f', 'b': '\b',
+  '_': '_', '~': '~', '.': '.', '-': '-', '!': '!', '$': '$', '&': '&',
+  '(': '(', ')': ')', '*': '*', '+': '+', ',': ',', ';': ';', '=': '=',
+  '/': '/', '?': '?', '#': '#', '@': '@', '%': '%',
+};
+var illegalIriChars = /[\x00-\x20<>\\"\{\}\|\^\`]/;
+
+var lineModeRegExps = {
+  _iri: true,
+  _unescapedIri: true,
+  _unescapedQuote: true,
+  _singleQuote: true,
+  _langcode: true,
+  _blank: true,
+  _newline: true,
+  _comment: true,
+  _whitespace: true,
+  _endOfFile: true,
+};
+var invalidRegExp = /$0^/;
+
+// ## Constructor
+class N3Lexer {
+  constructor(options) {
+    // ## Regular expressions
+    // It's slightly faster to have these as properties than as in-scope variables
+    this._iri = /^<((?:[^ <>{}\\]|\\[uU])+)>[ \t]*/; // IRI with escape sequences; needs sanity check after unescaping
+    this._unescapedIri = /^<([^\x00-\x20<>\\"\{\}\|\^\`]*)>[ \t]*/; // IRI without escape sequences; no unescaping
+    this._unescapedQuote = /^"([^"\\\r\n]+)"/; // non-empty string without escape sequences
+    this._unescapedApos =  /^'([^'\\\r\n]+)'/;
+    this._singleQuote = /^"((?:[^"\\\r\n]|\\.)*)"(?=[^"])/;
+    this._singleApos =  /^'((?:[^'\\\r\n]|\\.)*)'(?=[^'])/;
+    this._tripleQuote = /^"""([^"\\]*(?:(?:\\.|"(?!""))[^"\\]*)*)"""/;
+    this._tripleApos =  /^'''([^'\\]*(?:(?:\\.|'(?!''))[^'\\]*)*)'''/;
+    this._langcode = /^@([a-z]+(?:-[a-z0-9]+)*)(?=[^a-z0-9\-])/i;
+    this._prefix = /^((?:[A-Za-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff\u0370-\u037d\u037f-\u1fff\u200c\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])(?:\.?[\-0-9A-Z_a-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c\u200d\u203f\u2040\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])*)?:(?=[#\s<])/;
+    this._prefixed = /^((?:[A-Za-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff\u0370-\u037d\u037f-\u1fff\u200c\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])(?:\.?[\-0-9A-Z_a-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c\u200d\u203f\u2040\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])*)?:((?:(?:[0-:A-Z_a-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff\u0370-\u037d\u037f-\u1fff\u200c\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff]|%[0-9a-fA-F]{2}|\\[!#-\/;=?\-@_~])(?:(?:[\.\-0-:A-Z_a-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c\u200d\u203f\u2040\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff]|%[0-9a-fA-F]{2}|\\[!#-\/;=?\-@_~])*(?:[\-0-:A-Z_a-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c\u200d\u203f\u2040\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff]|%[0-9a-fA-F]{2}|\\[!#-\/;=?\-@_~]))?)?)(?:[ \t]+|(?=\.?[,;!\^\s#()\[\]\{\}"'<]))/;
+    this._variable = /^\?(?:(?:[A-Z_a-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff\u0370-\u037d\u037f-\u1fff\u200c\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])(?:[\-0-:A-Z_a-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c\u200d\u203f\u2040\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])*)(?=[.,;!\^\s#()\[\]\{\}"'<])/;
+    this._blank = /^_:((?:[0-9A-Z_a-z\xc0-\xd6\xd8-\xf6\xf8-\u02ff\u0370-\u037d\u037f-\u1fff\u200c\u200d\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])(?:\.?[\-0-9A-Z_a-z\xb7\xc0-\xd6\xd8-\xf6\xf8-\u037d\u037f-\u1fff\u200c\u200d\u203f\u2040\u2070-\u218f\u2c00-\u2fef\u3001-\ud7ff\uf900-\ufdcf\ufdf0-\ufffd]|[\ud800-\udb7f][\udc00-\udfff])*)(?:[ \t]+|(?=\.?[,;:\s#()\[\]\{\}"'<]))/;
+    this._number = /^[\-+]?(?:\d+\.?\d*([eE](?:[\-\+])?\d+)|\d*\.?\d+)(?=\.?[,;:\s#()\[\]\{\}"'<])/;
+    this._boolean = /^(?:true|false)(?=[.,;\s#()\[\]\{\}"'<])/;
+    this._keyword = /^@[a-z]+(?=[\s#<:])/i;
+    this._sparqlKeyword = /^(?:PREFIX|BASE|GRAPH)(?=[\s#<])/i;
+    this._shortPredicates = /^a(?=[\s()\[\]\{\}"'<])/;
+    this._newline = /^[ \t]*(?:#[^\n\r]*)?(?:\r\n|\n|\r)[ \t]*/;
+    this._comment = /#([^\n\r]*)/;
+    this._whitespace = /^[ \t]+/;
+    this._endOfFile = /^(?:#[^\n\r]*)?$/;
+    options = options || {};
+
+    // In line mode (N-Triples or N-Quads), only simple features may be parsed
+    if (this._lineMode = !!options.lineMode) {
+      this._n3Mode = false;
+      // Don't tokenize special literals
+      for (var key in this) {
+        if (!(key in lineModeRegExps) && this[key] instanceof RegExp)
+          this[key] = invalidRegExp;
+      }
+    }
+    // When not in line mode, enable N3 functionality by default
+    else {
+      this._n3Mode = options.n3 !== false;
+    }
+    // Don't output comment tokens by default
+    this._comments = !!options.comments;
+  }
+
+  // ## Private methods
+
+  // ### `_tokenizeToEnd` tokenizes as for as possible, emitting tokens through the callback
+  _tokenizeToEnd(callback, inputFinished) {
+    // Continue parsing as far as possible; the loop will return eventually
+    var input = this._input, outputComments = this._comments;
+    while (true) {
+      // Count and skip whitespace lines
+      var whiteSpaceMatch, comment;
+      while (whiteSpaceMatch = this._newline.exec(input)) {
+        // Try to find a comment
+        if (outputComments && (comment = this._comment.exec(whiteSpaceMatch[0])))
+          callback(null, { line: this._line, type: 'comment', value: comment[1], prefix: '' });
+        // Advance the input
+        input = input.substr(whiteSpaceMatch[0].length, input.length);
+        this._line++;
+      }
+      // Skip whitespace on current line
+      if (whiteSpaceMatch = this._whitespace.exec(input))
+        input = input.substr(whiteSpaceMatch[0].length, input.length);
+
+      // Stop for now if we're at the end
+      if (this._endOfFile.test(input)) {
+        // If the input is finished, emit EOF
+        if (inputFinished) {
+          // Try to find a final comment
+          if (outputComments && (comment = this._comment.exec(input)))
+            callback(null, { line: this._line, type: 'comment', value: comment[1], prefix: '' });
+          callback(input = null, { line: this._line, type: 'eof', value: '', prefix: '' });
+        }
+        return this._input = input;
+      }
+
+      // Look for specific token types based on the first character
+      var line = this._line, type = '', value = '', prefix = '',
+          firstChar = input[0], match = null, matchLength = 0, inconclusive = false;
+      switch (firstChar) {
+      case '^':
+        // We need at least 3 tokens lookahead to distinguish ^^<IRI> and ^^pre:fixed
+        if (input.length < 3)
+          break;
+        // Try to match a type
+        else if (input[1] === '^') {
+          this._previousMarker = '^^';
+          // Move to type IRI or prefixed name
+          input = input.substr(2);
+          if (input[0] !== '<') {
+            inconclusive = true;
+            break;
+          }
+        }
+        // If no type, it must be a path expression
+        else {
+          if (this._n3Mode) {
+            matchLength = 1;
+            type = '^';
+          }
+          break;
+        }
+        // Fall through in case the type is an IRI
+      case '<':
+        // Try to find a full IRI without escape sequences
+        if (match = this._unescapedIri.exec(input))
+          type = 'IRI', value = match[1];
+        // Try to find a full IRI with escape sequences
+        else if (match = this._iri.exec(input)) {
+          value = this._unescape(match[1]);
+          if (value === null || illegalIriChars.test(value))
+            return reportSyntaxError(this);
+          type = 'IRI';
+        }
+        // Try to find a backwards implication arrow
+        else if (this._n3Mode && input.length > 1 && input[1] === '=')
+          type = 'inverse', matchLength = 2, value = '>';
+        break;
+
+      case '_':
+        // Try to find a blank node. Since it can contain (but not end with) a dot,
+        // we always need a non-dot character before deciding it is a blank node.
+        // Therefore, try inserting a space if we're at the end of the input.
+        if ((match = this._blank.exec(input)) ||
+            inputFinished && (match = this._blank.exec(input + ' ')))
+          type = 'blank', prefix = '_', value = match[1];
+        break;
+
+      case '"':
+        // Try to find a literal without escape sequences
+        if (match = this._unescapedQuote.exec(input))
+          value = match[1];
+        // Before attempting more complex string patterns, try to detect a closing quote
+        else if (input.indexOf('"', 1) > 0) {
+          // Try to find any other literal wrapped in a pair of quotes
+          if (match = this._singleQuote.exec(input))
+            value = this._unescape(match[1]);
+          // Try to find a literal wrapped in three pairs of quotes
+          else if (match = this._tripleQuote.exec(input)) {
+            value = match[1];
+            // Advance line counter
+            this._line += value.split(/\r\n|\r|\n/).length - 1;
+            value = this._unescape(value);
+          }
+          if (value === null)
+            return reportSyntaxError(this);
+        }
+        if (match !== null)
+          type = 'literal';
+        break;
+
+      case "'":
+        // Try to find a literal without escape sequences
+        if (match = this._unescapedApos.exec(input))
+          value = match[1];
+        // Before attempting more complex string patterns, try to detect a closing apostrophe
+        else if (input.indexOf("'", 1) > 0) {
+          // Try to find any other literal wrapped in a pair of apostrophes
+          if (match = this._singleApos.exec(input))
+            value = this._unescape(match[1]);
+          // Try to find a literal wrapped in three pairs of apostrophes
+          else if (match = this._tripleApos.exec(input)) {
+            value = match[1];
+            // Advance line counter
+            this._line += value.split(/\r\n|\r|\n/).length - 1;
+            value = this._unescape(value);
+          }
+          if (value === null)
+            return reportSyntaxError(this);
+        }
+        if (match !== null)
+          type = 'literal';
+        break;
+
+      case '?':
+        // Try to find a variable
+        if (this._n3Mode && (match = this._variable.exec(input)))
+          type = 'var', value = match[0];
+        break;
+
+      case '@':
+        // Try to find a language code
+        if (this._previousMarker === 'literal' && (match = this._langcode.exec(input)))
+          type = 'langcode', value = match[1];
+        // Try to find a keyword
+        else if (match = this._keyword.exec(input))
+          type = match[0];
+        break;
+
+      case '.':
+        // Try to find a dot as punctuation
+        if (input.length === 1 ? inputFinished : (input[1] < '0' || input[1] > '9')) {
+          type = '.';
+          matchLength = 1;
+          break;
+        }
+        // Fall through to numerical case (could be a decimal dot)
+
+      case '0':
+      case '1':
+      case '2':
+      case '3':
+      case '4':
+      case '5':
+      case '6':
+      case '7':
+      case '8':
+      case '9':
+      case '+':
+      case '-':
+        // Try to find a number. Since it can contain (but not end with) a dot,
+        // we always need a non-dot character before deciding it is a number.
+        // Therefore, try inserting a space if we're at the end of the input.
+        if (match = this._number.exec(input) ||
+            inputFinished && (match = this._number.exec(input + ' '))) {
+          type = 'literal', value = match[0];
+          prefix = (match[1] ? xsd.double :
+                    (/^[+\-]?\d+$/.test(match[0]) ? xsd.integer : xsd.decimal));
+        }
+        break;
+
+      case 'B':
+      case 'b':
+      case 'p':
+      case 'P':
+      case 'G':
+      case 'g':
+        // Try to find a SPARQL-style keyword
+        if (match = this._sparqlKeyword.exec(input))
+          type = match[0].toUpperCase();
+        else
+          inconclusive = true;
+        break;
+
+      case 'f':
+      case 't':
+        // Try to match a boolean
+        if (match = this._boolean.exec(input))
+          type = 'literal', value = match[0], prefix = xsd.boolean;
+        else
+          inconclusive = true;
+        break;
+
+      case 'a':
+        // Try to find an abbreviated predicate
+        if (match = this._shortPredicates.exec(input))
+          type = 'abbreviation', value = 'a';
+        else
+          inconclusive = true;
+        break;
+
+      case '=':
+        // Try to find an implication arrow or equals sign
+        if (this._n3Mode && input.length > 1) {
+          type = 'abbreviation';
+          if (input[1] !== '>')
+            matchLength = 1, value = '=';
+          else
+            matchLength = 2, value = '>';
+        }
+        break;
+
+      case '!':
+        if (!this._n3Mode)
+          break;
+      case ',':
+      case ';':
+      case '[':
+      case ']':
+      case '(':
+      case ')':
+      case '{':
+      case '}':
+        if (!this._lineMode) {
+          matchLength = 1;
+          type = firstChar;
+        }
+        break;
+
+      default:
+        inconclusive = true;
+      }
+
+      // Some first characters do not allow an immediate decision, so inspect more
+      if (inconclusive) {
+        // Try to find a prefix
+        if ((this._previousMarker === '@prefix' || this._previousMarker === 'PREFIX') &&
+            (match = this._prefix.exec(input)))
+          type = 'prefix', value = match[1] || '';
+        // Try to find a prefixed name. Since it can contain (but not end with) a dot,
+        // we always need a non-dot character before deciding it is a prefixed name.
+        // Therefore, try inserting a space if we're at the end of the input.
+        else if ((match = this._prefixed.exec(input)) ||
+                 inputFinished && (match = this._prefixed.exec(input + ' ')))
+          type = 'prefixed', prefix = match[1] || '', value = this._unescape(match[2]);
+      }
+
+      // A type token is special: it can only be emitted after an IRI or prefixed name is read
+      if (this._previousMarker === '^^') {
+        switch (type) {
+        case 'prefixed': type = 'type';    break;
+        case 'IRI':      type = 'typeIRI'; break;
+        default:         type = '';
+        }
+      }
+
+      // What if nothing of the above was found?
+      if (!type) {
+        // We could be in streaming mode, and then we just wait for more input to arrive.
+        // Otherwise, a syntax error has occurred in the input.
+        // One exception: error on an unaccounted linebreak (= not inside a triple-quoted literal).
+        if (inputFinished || (!/^'''|^"""/.test(input) && /\n|\r/.test(input)))
+          return reportSyntaxError(this);
+        else
+          return this._input = input;
+      }
+
+      // Emit the parsed token
+      var token = { line: line, type: type, value: value, prefix: prefix };
+      callback(null, token);
+      this.previousToken = token;
+      this._previousMarker = type;
+      // Advance to next part to tokenize
+      input = input.substr(matchLength || match[0].length, input.length);
+    }
+
+    // Signals the syntax error through the callback
+    function reportSyntaxError(self) { callback(self._syntaxError(/^\S*/.exec(input)[0])); }
+  }
+
+  // ### `_unescape` replaces N3 escape codes by their corresponding characters
+  _unescape(item) {
+    try {
+      return item.replace(escapeSequence, function (sequence, unicode4, unicode8, escapedChar) {
+        var charCode;
+        if (unicode4) {
+          charCode = parseInt(unicode4, 16);
+          if (isNaN(charCode)) throw new Error(); // can never happen (regex), but helps performance
+          return fromCharCode(charCode);
+        }
+        else if (unicode8) {
+          charCode = parseInt(unicode8, 16);
+          if (isNaN(charCode)) throw new Error(); // can never happen (regex), but helps performance
+          if (charCode <= 0xFFFF) return fromCharCode(charCode);
+          return fromCharCode(0xD800 + ((charCode -= 0x10000) / 0x400), 0xDC00 + (charCode & 0x3FF));
+        }
+        else {
+          var replacement = escapeReplacements[escapedChar];
+          if (!replacement)
+            throw new Error();
+          return replacement;
+        }
+      });
+    }
+    catch (error) { return null; }
+  }
+
+  // ### `_syntaxError` creates a syntax error for the given issue
+  _syntaxError(issue) {
+    this._input = null;
+    var err = new Error('Unexpected "' + issue + '" on line ' + this._line + '.');
+    err.context = {
+      token: undefined,
+      line: this._line,
+      previousToken: this.previousToken,
+    };
+    return err;
+  }
+
+  // ## Public methods
+
+  // ### `tokenize` starts the transformation of an N3 document into an array of tokens.
+  // The input can be a string or a stream.
+  tokenize(input, callback) {
+    var self = this;
+    this._line = 1;
+
+    // If the input is a string, continuously emit tokens through the callback until the end
+    if (typeof input === 'string') {
+      this._input = input;
+      // If a callback was passed, asynchronously call it
+      if (typeof callback === 'function')
+        immediately(function () { self._tokenizeToEnd(callback, true); });
+      // If no callback was passed, tokenize synchronously and return
+      else {
+        var tokens = [], error;
+        this._tokenizeToEnd(function (e, t) { e ? (error = e) : tokens.push(t); }, true);
+        if (error) throw error;
+        return tokens;
+      }
+    }
+    // Otherwise, the input must be a stream
+    else {
+      this._input = '';
+      this._pendingBuffer = null;
+      if (typeof input.setEncoding === 'function')
+        input.setEncoding('utf8');
+      // Adds the data chunk to the buffer and parses as far as possible
+      input.on('data', function (data) {
+        if (self._input !== null && data.length !== 0) {
+          // Prepend any previous pending writes
+          if (self._pendingBuffer) {
+            data = Buffer.concat([self._pendingBuffer, data]);
+            self._pendingBuffer = null;
+          }
+          // Hold if the buffer ends in an incomplete unicode sequence
+          if (data[data.length - 1] & 0x80) {
+            self._pendingBuffer = data;
+          }
+          // Otherwise, tokenize as far as possible
+          else {
+            self._input += data;
+            self._tokenizeToEnd(callback, false);
+          }
+        }
+      });
+      // Parses until the end
+      input.on('end', function () {
+        if (self._input !== null)
+          self._tokenizeToEnd(callback, true);
+      });
+      input.on('error', callback);
+    }
+  }
+}
+
+
+// ## Exports
+module.exports = N3Lexer;
+
+}).call(this,require("buffer").Buffer,require("timers").setImmediate)
+},{"./IRIs":42,"buffer":11,"timers":75}],45:[function(require,module,exports){
+// **N3Parser** parses N3 documents.
+var Lexer = require('./N3Lexer'),
+    DataFactory = require('./N3DataFactory'),
+    namespaces = require('./IRIs');
+
+// The next ID for new blank nodes
+var blankNodePrefix = 0, blankNodeCount = 0;
+
+// ## Constructor
+class N3Parser {
+  constructor(options) {
+    this._contextStack = [];
+    this._graph = null;
+
+    // Set the document IRI
+    options = options || {};
+    this._setBase(options.baseIRI);
+    options.factory && initDataFactory(this, options.factory);
+
+    // Set supported features depending on the format
+    var format = (typeof options.format === 'string') ?
+                 options.format.match(/\w*$/)[0].toLowerCase() : '',
+        isTurtle = format === 'turtle', isTriG = format === 'trig',
+        isNTriples = /triple/.test(format), isNQuads = /quad/.test(format),
+        isN3 = this._n3Mode = /n3/.test(format),
+        isLineMode = isNTriples || isNQuads;
+    if (!(this._supportsNamedGraphs = !(isTurtle || isN3)))
+      this._readPredicateOrNamedGraph = this._readPredicate;
+    this._supportsQuads = !(isTurtle || isTriG || isNTriples || isN3);
+    // Disable relative IRIs in N-Triples or N-Quads mode
+    if (isLineMode)
+      this._resolveRelativeIRI = function (iri) { return ''; };
+    this._blankNodePrefix = typeof options.blankNodePrefix !== 'string' ? '' :
+                              options.blankNodePrefix.replace(/^(?!_:)/, '_:');
+    this._lexer = options.lexer || new Lexer({ lineMode: isLineMode, n3: isN3 });
+    // Disable explicit quantifiers by default
+    this._explicitQuantifiers = !!options.explicitQuantifiers;
+  }
+
+  // ## Static class methods
+
+// ### `_resetBlankNodeIds` restarts blank node identification
+  static _resetBlankNodeIds() {
+    blankNodePrefix = blankNodeCount = 0;
+  }
+
+  // ## Private methods
+
+  // ### `_blank` creates a new blank node
+  _blank() {
+    return this._blankNode('b' + blankNodeCount++);
+  }
+
+  // ### `_setBase` sets the base IRI to resolve relative IRIs
+  _setBase(baseIRI) {
+    if (!baseIRI)
+      this._base = null;
+    else {
+      // Remove fragment if present
+      var fragmentPos = baseIRI.indexOf('#');
+      if (fragmentPos >= 0)
+        baseIRI = baseIRI.substr(0, fragmentPos);
+      // Set base IRI and its components
+      this._base = baseIRI;
+      this._basePath   = baseIRI.indexOf('/') < 0 ? baseIRI :
+                         baseIRI.replace(/[^\/?]*(?:\?.*)?$/, '');
+      baseIRI = baseIRI.match(/^(?:([a-z][a-z0-9+.-]*:))?(?:\/\/[^\/]*)?/i);
+      this._baseRoot   = baseIRI[0];
+      this._baseScheme = baseIRI[1];
+    }
+  }
+
+  // ### `_saveContext` stores the current parsing context
+  // when entering a new scope (list, blank node, formula)
+  _saveContext(type, graph, subject, predicate, object) {
+    var n3Mode = this._n3Mode;
+    this._contextStack.push({
+      subject: subject, predicate: predicate, object: object,
+      graph: graph, type: type,
+      inverse: n3Mode ? this._inversePredicate : false,
+      blankPrefix: n3Mode ? this._prefixes._ : '',
+      quantified: n3Mode ? this._quantified : null,
+    });
+    // The settings below only apply to N3 streams
+    if (n3Mode) {
+      // Every new scope resets the predicate direction
+      this._inversePredicate = false;
+      // In N3, blank nodes are scoped to a formula
+      // (using a dot as separator, as a blank node label cannot start with it)
+      this._prefixes._ = (this._graph ? this._graph.id.substr(2) + '.' : '.');
+      // Quantifiers are scoped to a formula
+      this._quantified = Object.create(this._quantified);
+    }
+  }
+
+  // ### `_restoreContext` restores the parent context
+  // when leaving a scope (list, blank node, formula)
+  _restoreContext() {
+    var context = this._contextStack.pop(), n3Mode = this._n3Mode;
+    this._subject   = context.subject;
+    this._predicate = context.predicate;
+    this._object    = context.object;
+    this._graph     = context.graph;
+    // The settings below only apply to N3 streams
+    if (n3Mode) {
+      this._inversePredicate = context.inverse;
+      this._prefixes._ = context.blankPrefix;
+      this._quantified = context.quantified;
+    }
+  }
+
+  // ### `_readInTopContext` reads a token when in the top context
+  _readInTopContext(token) {
+    switch (token.type) {
+    // If an EOF token arrives in the top context, signal that we're done
+    case 'eof':
+      if (this._graph !== null)
+        return this._error('Unclosed graph', token);
+      delete this._prefixes._;
+      return this._callback(null, null, this._prefixes);
+    // It could be a prefix declaration
+    case 'PREFIX':
+      this._sparqlStyle = true;
+    case '@prefix':
+      return this._readPrefix;
+    // It could be a base declaration
+    case 'BASE':
+      this._sparqlStyle = true;
+    case '@base':
+      return this._readBaseIRI;
+    // It could be a graph
+    case '{':
+      if (this._supportsNamedGraphs) {
+        this._graph = '';
+        this._subject = null;
+        return this._readSubject;
+      }
+    case 'GRAPH':
+      if (this._supportsNamedGraphs)
+        return this._readNamedGraphLabel;
+    // Otherwise, the next token must be a subject
+    default:
+      return this._readSubject(token);
+    }
+  }
+
+  // ### `_readEntity` reads an IRI, prefixed name, blank node, or variable
+  _readEntity(token, quantifier) {
+    var value;
+    switch (token.type) {
+    // Read a relative or absolute IRI
+    case 'IRI':
+    case 'typeIRI':
+      var iri = this._resolveIRI(token.value);
+      if (iri === '')
+        return this._error('Invalid IRI', token);
+      value = this._namedNode(iri);
+      break;
+    // Read a prefixed name
+    case 'type':
+    case 'prefixed':
+      var prefix = this._prefixes[token.prefix];
+      if (prefix === undefined)
+        return this._error('Undefined prefix "' + token.prefix + ':"', token);
+      value = this._namedNode(prefix + token.value);
+      break;
+    // Read a blank node
+    case 'blank':
+      value = this._blankNode(this._prefixes[token.prefix] + token.value);
+      break;
+    // Read a variable
+    case 'var':
+      value = this._variable(token.value.substr(1));
+      break;
+    // Everything else is not an entity
+    default:
+      return this._error('Expected entity but got ' + token.type, token);
+    }
+    // In N3 mode, replace the entity if it is quantified
+    if (!quantifier && this._n3Mode && (value.id in this._quantified))
+      value = this._quantified[value.id];
+    return value;
+  }
+
+  // ### `_readSubject` reads a quad's subject
+  _readSubject(token) {
+    this._predicate = null;
+    switch (token.type) {
+    case '[':
+      // Start a new quad with a new blank node as subject
+      this._saveContext('blank', this._graph,
+                        this._subject = this._blank(), null, null);
+      return this._readBlankNodeHead;
+    case '(':
+      // Start a new list
+      this._saveContext('list', this._graph, this.RDF_NIL, null, null);
+      this._subject = null;
+      return this._readListItem;
+    case '{':
+      // Start a new formula
+      if (!this._n3Mode)
+        return this._error('Unexpected graph', token);
+      this._saveContext('formula', this._graph,
+                        this._graph = this._blank(), null, null);
+      return this._readSubject;
+    case '}':
+       // No subject; the graph in which we are reading is closed instead
+      return this._readPunctuation(token);
+    case '@forSome':
+      if (!this._n3Mode)
+        return this._error('Unexpected "@forSome"', token);
+      this._subject = null;
+      this._predicate = this.N3_FORSOME;
+      this._quantifier = this._blankNode;
+      return this._readQuantifierList;
+    case '@forAll':
+      if (!this._n3Mode)
+        return this._error('Unexpected "@forAll"', token);
+      this._subject = null;
+      this._predicate = this.N3_FORALL;
+      this._quantifier = this._variable;
+      return this._readQuantifierList;
+    default:
+      // Read the subject entity
+      if ((this._subject = this._readEntity(token)) === undefined)
+        return;
+      // In N3 mode, the subject might be a path
+      if (this._n3Mode)
+        return this._getPathReader(this._readPredicateOrNamedGraph);
+    }
+
+    // The next token must be a predicate,
+    // or, if the subject was actually a graph IRI, a named graph
+    return this._readPredicateOrNamedGraph;
+  }
+
+  // ### `_readPredicate` reads a quad's predicate
+  _readPredicate(token) {
+    var type = token.type;
+    switch (type) {
+    case 'inverse':
+      this._inversePredicate = true;
+    case 'abbreviation':
+      this._predicate = this.ABBREVIATIONS[token.value];
+      break;
+    case '.':
+    case ']':
+    case '}':
+      // Expected predicate didn't come, must have been trailing semicolon
+      if (this._predicate === null)
+        return this._error('Unexpected ' + type, token);
+      this._subject = null;
+      return type === ']' ? this._readBlankNodeTail(token) : this._readPunctuation(token);
+    case ';':
+      // Additional semicolons can be safely ignored
+      return this._predicate !== null ? this._readPredicate :
+             this._error('Expected predicate but got ;', token);
+    case 'blank':
+      if (!this._n3Mode)
+        return this._error('Disallowed blank node as predicate', token);
+    default:
+      if ((this._predicate = this._readEntity(token)) === undefined)
+        return;
+    }
+    // The next token must be an object
+    return this._readObject;
+  }
+
+  // ### `_readObject` reads a quad's object
+  _readObject(token) {
+    switch (token.type) {
+    case 'literal':
+      // Regular literal, can still get a datatype or language
+      if (token.prefix.length === 0) {
+        this._literalValue = token.value;
+        return this._readDataTypeOrLang;
+      }
+      // Pre-datatyped string literal (prefix stores the datatype)
+      else
+        this._object = this._literal(token.value, this._namedNode(token.prefix));
+      break;
+    case '[':
+      // Start a new quad with a new blank node as subject
+      this._saveContext('blank', this._graph, this._subject, this._predicate,
+                        this._subject = this._blank());
+      return this._readBlankNodeHead;
+    case '(':
+      // Start a new list
+      this._saveContext('list', this._graph, this._subject, this._predicate, this.RDF_NIL);
+      this._subject = null;
+      return this._readListItem;
+    case '{':
+      // Start a new formula
+      if (!this._n3Mode)
+        return this._error('Unexpected graph', token);
+      this._saveContext('formula', this._graph, this._subject, this._predicate,
+                        this._graph = this._blank());
+      return this._readSubject;
+    default:
+      // Read the object entity
+      if ((this._object = this._readEntity(token)) === undefined)
+        return;
+      // In N3 mode, the object might be a path
+      if (this._n3Mode)
+        return this._getPathReader(this._getContextEndReader());
+    }
+    return this._getContextEndReader();
+  }
+
+  // ### `_readPredicateOrNamedGraph` reads a quad's predicate, or a named graph
+  _readPredicateOrNamedGraph(token) {
+    return token.type === '{' ? this._readGraph(token) : this._readPredicate(token);
+  }
+
+  // ### `_readGraph` reads a graph
+  _readGraph(token) {
+    if (token.type !== '{')
+      return this._error('Expected graph but got ' + token.type, token);
+    // The "subject" we read is actually the GRAPH's label
+    this._graph = this._subject, this._subject = null;
+    return this._readSubject;
+  }
+
+  // ### `_readBlankNodeHead` reads the head of a blank node
+  _readBlankNodeHead(token) {
+    if (token.type === ']') {
+      this._subject = null;
+      return this._readBlankNodeTail(token);
+    }
+    else {
+      this._predicate = null;
+      return this._readPredicate(token);
+    }
+  }
+
+  // ### `_readBlankNodeTail` reads the end of a blank node
+  _readBlankNodeTail(token) {
+    if (token.type !== ']')
+      return this._readBlankNodePunctuation(token);
+
+    // Store blank node quad
+    if (this._subject !== null)
+      this._emit(this._subject, this._predicate, this._object, this._graph);
+
+    // Restore the parent context containing this blank node
+    var empty = this._predicate === null;
+    this._restoreContext();
+    // If the blank node was the subject, continue reading the predicate
+    if (this._object === null)
+      // If the blank node was empty, it could be a named graph label
+      return empty ? this._readPredicateOrNamedGraph : this._readPredicateAfterBlank;
+    // If the blank node was the object, restore previous context and read punctuation
+    else
+      return this._getContextEndReader();
+  }
+
+  // ### `_readPredicateAfterBlank` reads a predicate after an anonymous blank node
+  _readPredicateAfterBlank(token) {
+    switch (token.type) {
+    case '.':
+    case '}':
+      // No predicate is coming if the triple is terminated here
+      this._subject = null;
+      return this._readPunctuation(token);
+    default:
+      return this._readPredicate(token);
+    }
+  }
+
+  // ### `_readListItem` reads items from a list
+  _readListItem(token) {
+    var item = null,                      // The item of the list
+        list = null,                      // The list itself
+        previousList = this._subject,     // The previous list that contains this list
+        stack = this._contextStack,       // The stack of parent contexts
+        parent = stack[stack.length - 1], // The parent containing the current list
+        next = this._readListItem;        // The next function to execute
+
+    switch (token.type) {
+    case '[':
+      // Stack the current list quad and start a new quad with a blank node as subject
+      this._saveContext('blank', this._graph,
+                        list = this._blank(), this.RDF_FIRST,
+                        this._subject = item = this._blank());
+      next = this._readBlankNodeHead;
+      break;
+    case '(':
+      // Stack the current list quad and start a new list
+      this._saveContext('list', this._graph,
+                        list = this._blank(), this.RDF_FIRST, this.RDF_NIL);
+      this._subject = null;
+      break;
+    case ')':
+      // Closing the list; restore the parent context
+      this._restoreContext();
+      // If this list is contained within a parent list, return the membership quad here.
+      // This will be `<parent list element> rdf:first <this list>.`.
+      if (stack.length !== 0 && stack[stack.length - 1].type === 'list')
+        this._emit(this._subject, this._predicate, this._object, this._graph);
+      // Was this list the parent's subject?
+      if (this._predicate === null) {
+        // The next token is the predicate
+        next = this._readPredicate;
+        // No list tail if this was an empty list
+        if (this._subject === this.RDF_NIL)
+          return next;
+      }
+      // The list was in the parent context's object
+      else {
+        next = this._getContextEndReader();
+        // No list tail if this was an empty list
+        if (this._object === this.RDF_NIL)
+          return next;
+      }
+      // Close the list by making the head nil
+      list = this.RDF_NIL;
+      break;
+    case 'literal':
+      // Regular literal, can still get a datatype or language
+      if (token.prefix.length === 0) {
+        this._literalValue = token.value;
+        next = this._readListItemDataTypeOrLang;
+      }
+      // Pre-datatyped string literal (prefix stores the datatype)
+      else {
+        item = this._literal(token.value, this._namedNode(token.prefix));
+        next = this._getContextEndReader();
+      }
+      break;
+    default:
+      if ((item = this._readEntity(token)) === undefined)
+        return;
+    }
+
+     // Create a new blank node if no item head was assigned yet
+    if (list === null)
+      this._subject = list = this._blank();
+
+    // Is this the first element of the list?
+    if (previousList === null) {
+      // This list is either the subject or the object of its parent
+      if (parent.predicate === null)
+        parent.subject = list;
+      else
+        parent.object = list;
+    }
+    else {
+      // Continue the previous list with the current list
+      this._emit(previousList, this.RDF_REST, list, this._graph);
+    }
+    // If an item was read, add it to the list
+    if (item !== null) {
+      // In N3 mode, the item might be a path
+      if (this._n3Mode && (token.type === 'IRI' || token.type === 'prefixed')) {
+        // Create a new context to add the item's path
+        this._saveContext('item', this._graph, list, this.RDF_FIRST, item);
+        this._subject = item, this._predicate = null;
+        // _readPath will restore the context and output the item
+        return this._getPathReader(this._readListItem);
+      }
+      // Output the item
+      this._emit(list, this.RDF_FIRST, item, this._graph);
+    }
+    return next;
+  }
+
+  // ### `_readDataTypeOrLang` reads an _optional_ datatype or language
+  _readDataTypeOrLang(token) {
+    return this._completeLiteral(token, false);
+  }
+
+  // ### `_readListItemDataTypeOrLang` reads an _optional_ datatype or language in a list
+  _readListItemDataTypeOrLang(token) {
+    return this._completeLiteral(token, true);
+  }
+
+  // ### `_completeLiteral` completes a literal with an optional datatype or language
+  _completeLiteral(token, listItem) {
+    switch (token.type) {
+    // Create a datatyped literal
+    case 'type':
+    case 'typeIRI':
+      var datatype = this._readEntity(token);
+      if (datatype === undefined) return; // No datatype means an error occurred
+      this._object = this._literal(this._literalValue, datatype);
+      token = null;
+      break;
+    // Create a language-tagged string
+    case 'langcode':
+      this._object = this._literal(this._literalValue, token.value);
+      token = null;
+      break;
+    // Create a simple string literal
+    default:
+      this._object = this._literal(this._literalValue);
+    }
+    // If this literal was part of a list, write the item
+    // (we could also check the context stack, but passing in a flag is faster)
+    if (listItem)
+      this._emit(this._subject, this.RDF_FIRST, this._object, this._graph);
+    // If the token was consumed, continue with the rest of the input
+    if (token === null)
+      return this._getContextEndReader();
+    // Otherwise, consume the token now
+    else {
+      this._readCallback = this._getContextEndReader();
+      return this._readCallback(token);
+    }
+  }
+
+  // ### `_readFormulaTail` reads the end of a formula
+  _readFormulaTail(token) {
+    if (token.type !== '}')
+      return this._readPunctuation(token);
+
+    // Store the last quad of the formula
+    if (this._subject !== null)
+      this._emit(this._subject, this._predicate, this._object, this._graph);
+
+    // Restore the parent context containing this formula
+    this._restoreContext();
+    // If the formula was the subject, continue reading the predicate.
+    // If the formula was the object, read punctuation.
+    return this._object === null ? this._readPredicate : this._getContextEndReader();
+  }
+
+  // ### `_readPunctuation` reads punctuation between quads or quad parts
+  _readPunctuation(token) {
+    var next, subject = this._subject, graph = this._graph,
+        inversePredicate = this._inversePredicate;
+    switch (token.type) {
+    // A closing brace ends a graph
+    case '}':
+      if (this._graph === null)
+        return this._error('Unexpected graph closing', token);
+      if (this._n3Mode)
+        return this._readFormulaTail(token);
+      this._graph = null;
+    // A dot just ends the statement, without sharing anything with the next
+    case '.':
+      this._subject = null;
+      next = this._contextStack.length ? this._readSubject : this._readInTopContext;
+      if (inversePredicate) this._inversePredicate = false;
+      break;
+    // Semicolon means the subject is shared; predicate and object are different
+    case ';':
+      next = this._readPredicate;
+      break;
+    // Comma means both the subject and predicate are shared; the object is different
+    case ',':
+      next = this._readObject;
+      break;
+    default:
+      // An entity means this is a quad (only allowed if not already inside a graph)
+      if (this._supportsQuads && this._graph === null && (graph = this._readEntity(token)) !== undefined) {
+        next = this._readQuadPunctuation;
+        break;
+      }
+      return this._error('Expected punctuation to follow "' + this._object.id + '"', token);
+    }
+    // A quad has been completed now, so return it
+    if (subject !== null) {
+      var predicate = this._predicate, object = this._object;
+      if (!inversePredicate)
+        this._emit(subject, predicate, object,  graph);
+      else
+        this._emit(object,  predicate, subject, graph);
+    }
+    return next;
+  }
+
+    // ### `_readBlankNodePunctuation` reads punctuation in a blank node
+  _readBlankNodePunctuation(token) {
+    var next;
+    switch (token.type) {
+    // Semicolon means the subject is shared; predicate and object are different
+    case ';':
+      next = this._readPredicate;
+      break;
+    // Comma means both the subject and predicate are shared; the object is different
+    case ',':
+      next = this._readObject;
+      break;
+    default:
+      return this._error('Expected punctuation to follow "' + this._object.id + '"', token);
+    }
+    // A quad has been completed now, so return it
+    this._emit(this._subject, this._predicate, this._object, this._graph);
+    return next;
+  }
+
+  // ### `_readQuadPunctuation` reads punctuation after a quad
+  _readQuadPunctuation(token) {
+    if (token.type !== '.')
+      return this._error('Expected dot to follow quad', token);
+    return this._readInTopContext;
+  }
+
+  // ### `_readPrefix` reads the prefix of a prefix declaration
+  _readPrefix(token) {
+    if (token.type !== 'prefix')
+      return this._error('Expected prefix to follow @prefix', token);
+    this._prefix = token.value;
+    return this._readPrefixIRI;
+  }
+
+  // ### `_readPrefixIRI` reads the IRI of a prefix declaration
+  _readPrefixIRI(token) {
+    if (token.type !== 'IRI')
+      return this._error('Expected IRI to follow prefix "' + this._prefix + ':"', token);
+    var prefixNode = this._readEntity(token);
+    this._prefixes[this._prefix] = prefixNode.value;
+    this._prefixCallback(this._prefix, prefixNode);
+    return this._readDeclarationPunctuation;
+  }
+
+  // ### `_readBaseIRI` reads the IRI of a base declaration
+  _readBaseIRI(token) {
+    var iri = token.type === 'IRI' && this._resolveIRI(token.value);
+    if (!iri)
+      return this._error('Expected valid IRI to follow base declaration', token);
+    this._setBase(iri);
+    return this._readDeclarationPunctuation;
+  }
+
+  // ### `_readNamedGraphLabel` reads the label of a named graph
+  _readNamedGraphLabel(token) {
+    switch (token.type) {
+    case 'IRI':
+    case 'blank':
+    case 'prefixed':
+      return this._readSubject(token), this._readGraph;
+    case '[':
+      return this._readNamedGraphBlankLabel;
+    default:
+      return this._error('Invalid graph label', token);
+    }
+  }
+
+  // ### `_readNamedGraphLabel` reads a blank node label of a named graph
+  _readNamedGraphBlankLabel(token) {
+    if (token.type !== ']')
+      return this._error('Invalid graph label', token);
+    this._subject = this._blank();
+    return this._readGraph;
+  }
+
+  // ### `_readDeclarationPunctuation` reads the punctuation of a declaration
+  _readDeclarationPunctuation(token) {
+    // SPARQL-style declarations don't have punctuation
+    if (this._sparqlStyle) {
+      this._sparqlStyle = false;
+      return this._readInTopContext(token);
+    }
+
+    if (token.type !== '.')
+      return this._error('Expected declaration to end with a dot', token);
+    return this._readInTopContext;
+  }
+
+  // Reads a list of quantified symbols from a @forSome or @forAll statement
+  _readQuantifierList(token) {
+    var entity;
+    switch (token.type) {
+    case 'IRI':
+    case 'prefixed':
+      if ((entity = this._readEntity(token, true)) !== undefined)
+        break;
+    default:
+      return this._error('Unexpected ' + token.type, token);
+    }
+    // Without explicit quantifiers, map entities to a quantified entity
+    if (!this._explicitQuantifiers)
+      this._quantified[entity.id] = this._quantifier('b' + blankNodeCount++);
+    // With explicit quantifiers, output the reified quantifier
+    else {
+      // If this is the first item, start a new quantifier list
+      if (this._subject === null)
+        this._emit(this._graph || this.DEFAULTGRAPH, this._predicate,
+                   this._subject = this._blank(), this.QUANTIFIERS_GRAPH);
+      // Otherwise, continue the previous list
+      else
+        this._emit(this._subject, this.RDF_REST,
+                   this._subject = this._blank(), this.QUANTIFIERS_GRAPH);
+      // Output the list item
+      this._emit(this._subject, this.RDF_FIRST, entity, this.QUANTIFIERS_GRAPH);
+    }
+    return this._readQuantifierPunctuation;
+  }
+
+  // Reads punctuation from a @forSome or @forAll statement
+  _readQuantifierPunctuation(token) {
+    // Read more quantifiers
+    if (token.type === ',')
+      return this._readQuantifierList;
+    // End of the quantifier list
+    else {
+      // With explicit quantifiers, close the quantifier list
+      if (this._explicitQuantifiers) {
+        this._emit(this._subject, this.RDF_REST, this.RDF_NIL, this.QUANTIFIERS_GRAPH);
+        this._subject = null;
+      }
+      // Read a dot
+      this._readCallback = this._getContextEndReader();
+      return this._readCallback(token);
+    }
+  }
+
+  // ### `_getPathReader` reads a potential path and then resumes with the given function
+  _getPathReader(afterPath) {
+    this._afterPath = afterPath;
+    return this._readPath;
+  }
+
+  // ### `_readPath` reads a potential path
+  _readPath(token) {
+    switch (token.type) {
+    // Forward path
+    case '!': return this._readForwardPath;
+    // Backward path
+    case '^': return this._readBackwardPath;
+    // Not a path; resume reading where we left off
+    default:
+      var stack = this._contextStack, parent = stack.length && stack[stack.length - 1];
+      // If we were reading a list item, we still need to output it
+      if (parent && parent.type === 'item') {
+        // The list item is the remaining subejct after reading the path
+        var item = this._subject;
+        // Switch back to the context of the list
+        this._restoreContext();
+        // Output the list item
+        this._emit(this._subject, this.RDF_FIRST, item, this._graph);
+      }
+      return this._afterPath(token);
+    }
+  }
+
+  // ### `_readForwardPath` reads a '!' path
+  _readForwardPath(token) {
+    var subject, predicate, object = this._blank();
+    // The next token is the predicate
+    if ((predicate = this._readEntity(token)) === undefined)
+      return;
+    // If we were reading a subject, replace the subject by the path's object
+    if (this._predicate === null)
+      subject = this._subject, this._subject = object;
+    // If we were reading an object, replace the subject by the path's object
+    else
+      subject = this._object,  this._object  = object;
+    // Emit the path's current quad and read its next section
+    this._emit(subject, predicate, object, this._graph);
+    return this._readPath;
+  }
+
+  // ### `_readBackwardPath` reads a '^' path
+  _readBackwardPath(token) {
+    var subject = this._blank(), predicate, object;
+    // The next token is the predicate
+    if ((predicate = this._readEntity(token)) === undefined)
+      return;
+    // If we were reading a subject, replace the subject by the path's subject
+    if (this._predicate === null)
+      object = this._subject, this._subject = subject;
+    // If we were reading an object, replace the subject by the path's subject
+    else
+      object = this._object,  this._object  = subject;
+    // Emit the path's current quad and read its next section
+    this._emit(subject, predicate, object, this._graph);
+    return this._readPath;
+  }
+
+  // ### `_getContextEndReader` gets the next reader function at the end of a context
+  _getContextEndReader() {
+    var contextStack = this._contextStack;
+    if (!contextStack.length)
+      return this._readPunctuation;
+
+    switch (contextStack[contextStack.length - 1].type) {
+    case 'blank':
+      return this._readBlankNodeTail;
+    case 'list':
+      return this._readListItem;
+    case 'formula':
+      return this._readFormulaTail;
+    }
+  }
+
+  // ### `_emit` sends a quad through the callback
+  _emit(subject, predicate, object, graph) {
+    this._callback(null, this._quad(subject, predicate, object, graph || this.DEFAULTGRAPH));
+  }
+
+  // ### `_error` emits an error message through the callback
+  _error(message, token) {
+    var err = new Error(message + ' on line ' + token.line + '.');
+    err.context = {
+      token: token,
+      line: token.line,
+      previousToken: this._lexer.previousToken,
+    };
+    this._callback(err);
+    this._callback = noop;
+  }
+
+  // ### `_resolveIRI` resolves an IRI against the base path
+  _resolveIRI(iri) {
+    return /^[a-z][a-z0-9+.-]*:/i.test(iri) ? iri : this._resolveRelativeIRI(iri);
+  }
+
+  // ### `_resolveRelativeIRI` resolves an IRI against the base path,
+  // assuming that a base path has been set and that the IRI is indeed relative
+  _resolveRelativeIRI(iri) {
+    // An empty relative IRI indicates the base IRI
+    if (!iri.length)
+      return this._base;
+    // Decide resolving strategy based in the first character
+    switch (iri[0]) {
+    // Resolve relative fragment IRIs against the base IRI
+    case '#': return this._base + iri;
+    // Resolve relative query string IRIs by replacing the query string
+    case '?': return this._base.replace(/(?:\?.*)?$/, iri);
+    // Resolve root-relative IRIs at the root of the base IRI
+    case '/':
+      // Resolve scheme-relative IRIs to the scheme
+      return (iri[1] === '/' ? this._baseScheme : this._baseRoot) + this._removeDotSegments(iri);
+    // Resolve all other IRIs at the base IRI's path
+    default:
+      // Relative IRIs cannot contain a colon in the first path segment
+      return (/^[^/:]*:/.test(iri)) ? '' : this._removeDotSegments(this._basePath + iri);
+    }
+  }
+
+  // ### `_removeDotSegments` resolves './' and '../' path segments in an IRI as per RFC3986
+  _removeDotSegments(iri) {
+    // Don't modify the IRI if it does not contain any dot segments
+    if (!/(^|\/)\.\.?($|[/#?])/.test(iri))
+      return iri;
+
+    // Start with an imaginary slash before the IRI in order to resolve trailing './' and '../'
+    var result = '', length = iri.length, i = -1, pathStart = -1, segmentStart = 0, next = '/';
+
+    while (i < length) {
+      switch (next) {
+      // The path starts with the first slash after the authority
+      case ':':
+        if (pathStart < 0) {
+          // Skip two slashes before the authority
+          if (iri[++i] === '/' && iri[++i] === '/')
+            // Skip to slash after the authority
+            while ((pathStart = i + 1) < length && iri[pathStart] !== '/')
+              i = pathStart;
+        }
+        break;
+      // Don't modify a query string or fragment
+      case '?':
+      case '#':
+        i = length;
+        break;
+      // Handle '/.' or '/..' path segments
+      case '/':
+        if (iri[i + 1] === '.') {
+          next = iri[++i + 1];
+          switch (next) {
+          // Remove a '/.' segment
+          case '/':
+            result += iri.substring(segmentStart, i - 1);
+            segmentStart = i + 1;
+            break;
+          // Remove a trailing '/.' segment
+          case undefined:
+          case '?':
+          case '#':
+            return result + iri.substring(segmentStart, i) + iri.substr(i + 1);
+          // Remove a '/..' segment
+          case '.':
+            next = iri[++i + 1];
+            if (next === undefined || next === '/' || next === '?' || next === '#') {
+              result += iri.substring(segmentStart, i - 2);
+              // Try to remove the parent path from result
+              if ((segmentStart = result.lastIndexOf('/')) >= pathStart)
+                result = result.substr(0, segmentStart);
+              // Remove a trailing '/..' segment
+              if (next !== '/')
+                return result + '/' + iri.substr(i + 1);
+              segmentStart = i + 1;
+            }
+          }
+        }
+      }
+      next = iri[++i];
+    }
+    return result + iri.substring(segmentStart);
+  }
+
+  // ## Public methods
+
+  // ### `parse` parses the N3 input and emits each parsed quad through the callback
+  parse(input, quadCallback, prefixCallback) {
+    var self = this;
+    // The read callback is the next function to be executed when a token arrives.
+    // We start reading in the top context.
+    this._readCallback = this._readInTopContext;
+    this._sparqlStyle = false;
+    this._prefixes = Object.create(null);
+    this._prefixes._ = this._blankNodePrefix ? this._blankNodePrefix.substr(2)
+                                             : 'b' + blankNodePrefix++ + '_';
+    this._prefixCallback = prefixCallback || noop;
+    this._inversePredicate = false;
+    this._quantified = Object.create(null);
+
+    // Parse synchronously if no quad callback is given
+    if (!quadCallback) {
+      var quads = [], error;
+      this._callback = function (e, t) { e ? (error = e) : t && quads.push(t); };
+      this._lexer.tokenize(input).every(function (token) {
+        return self._readCallback = self._readCallback(token);
+      });
+      if (error) throw error;
+      return quads;
+    }
+
+    // Parse asynchronously otherwise, executing the read callback when a token arrives
+    this._callback = quadCallback;
+    this._lexer.tokenize(input, function (error, token) {
+      if (error !== null)
+        self._callback(error), self._callback = noop;
+      else if (self._readCallback)
+        self._readCallback = self._readCallback(token);
+    });
+  }
+}
+
+// The empty function
+function noop() {}
+
+// Initializes the parser with the given data factory
+function initDataFactory(parser, factory) {
+  // Set factory methods
+  var namedNode = factory.namedNode;
+  parser._namedNode   = namedNode;
+  parser._blankNode   = factory.blankNode;
+  parser._literal     = factory.literal;
+  parser._variable    = factory.variable;
+  parser._quad        = factory.quad;
+  parser.DEFAULTGRAPH = factory.defaultGraph();
+
+  // Set common named nodes
+  parser.RDF_FIRST  = namedNode(namespaces.rdf.first);
+  parser.RDF_REST   = namedNode(namespaces.rdf.rest);
+  parser.RDF_NIL    = namedNode(namespaces.rdf.nil);
+  parser.N3_FORALL  = namedNode(namespaces.r.forAll);
+  parser.N3_FORSOME = namedNode(namespaces.r.forSome);
+  parser.ABBREVIATIONS = {
+    'a': namedNode(namespaces.rdf.type),
+    '=': namedNode(namespaces.owl.sameAs),
+    '>': namedNode(namespaces.log.implies),
+  };
+  parser.QUANTIFIERS_GRAPH = namedNode('urn:n3:quantifiers');
+}
+initDataFactory(N3Parser.prototype, DataFactory);
+
+// ## Exports
+module.exports = N3Parser;
+
+},{"./IRIs":42,"./N3DataFactory":43,"./N3Lexer":44}],46:[function(require,module,exports){
+// **N3Store** objects store N3 quads by graph in memory.
+
+var DataFactory = require('./N3DataFactory'),
+    Readable = require('stream').Readable;
+var toId = DataFactory.internal.toId,
+    fromId = DataFactory.internal.fromId;
+
+// ## Constructor
+class N3Store {
+  constructor(quads, options) {
+    // The number of quads is initially zero
+    this._size = 0;
+    // `_graphs` contains subject, predicate, and object indexes per graph
+    this._graphs = Object.create(null);
+    // `_ids` maps entities such as `http://xmlns.com/foaf/0.1/name` to numbers,
+    // saving memory by using only numbers as keys in `_graphs`
+    this._id = 0;
+    this._ids = Object.create(null);
+    this._ids['><'] = 0; // dummy entry, so the first actual key is non-zero
+    this._entities = Object.create(null); // inverse of `_ids`
+    // `_blankNodeIndex` is the index of the last automatically named blank node
+    this._blankNodeIndex = 0;
+
+    // Shift parameters if `quads` is not given
+    if (!options && quads && !quads[0])
+      options = quads, quads = null;
+    options = options || {};
+    this._factory = options.factory || DataFactory;
+
+    // Add quads if passed
+    if (quads)
+      this.addQuads(quads);
+  }
+
+  // ## Public properties
+
+  // ### `size` returns the number of quads in the store
+  get size() {
+    // Return the quad count if if was cached
+    var size = this._size;
+    if (size !== null)
+      return size;
+
+    // Calculate the number of quads by counting to the deepest level
+    size = 0;
+    var graphs = this._graphs, subjects, subject;
+    for (var graphKey in graphs)
+      for (var subjectKey in (subjects = graphs[graphKey].subjects))
+        for (var predicateKey in (subject = subjects[subjectKey]))
+          size += Object.keys(subject[predicateKey]).length;
+    return this._size = size;
+  }
+
+  // ## Private methods
+
+  // ### `_addToIndex` adds a quad to a three-layered index.
+  // Returns if the index has changed, if the entry did not already exist.
+  _addToIndex(index0, key0, key1, key2) {
+    // Create layers as necessary
+    var index1 = index0[key0] || (index0[key0] = {});
+    var index2 = index1[key1] || (index1[key1] = {});
+    // Setting the key to _any_ value signals the presence of the quad
+    var existed = key2 in index2;
+    if (!existed)
+      index2[key2] = null;
+    return !existed;
+  }
+
+  // ### `_removeFromIndex` removes a quad from a three-layered index
+  _removeFromIndex(index0, key0, key1, key2) {
+    // Remove the quad from the index
+    var index1 = index0[key0], index2 = index1[key1], key;
+    delete index2[key2];
+
+    // Remove intermediary index layers if they are empty
+    for (key in index2) return;
+    delete index1[key1];
+    for (key in index1) return;
+    delete index0[key0];
+  }
+
+  // ### `_findInIndex` finds a set of quads in a three-layered index.
+  // The index base is `index0` and the keys at each level are `key0`, `key1`, and `key2`.
+  // Any of these keys can be undefined, which is interpreted as a wildcard.
+  // `name0`, `name1`, and `name2` are the names of the keys at each level,
+  // used when reconstructing the resulting quad
+  // (for instance: _subject_, _predicate_, and _object_).
+  // Finally, `graph` will be the graph of the created quads.
+  // If `callback` is given, each result is passed through it
+  // and iteration halts when it returns truthy for any quad.
+  // If instead `array` is given, each result is added to the array.
+  _findInIndex(index0, key0, key1, key2, name0, name1, name2, graph, callback, array) {
+    var tmp, index1, index2, varCount = !key0 + !key1 + !key2,
+        // depending on the number of variables, keys or reverse index are faster
+        entityKeys = varCount > 1 ? Object.keys(this._ids) : this._entities;
+
+    // If a key is specified, use only that part of index 0.
+    if (key0) (tmp = index0, index0 = {})[key0] = tmp[key0];
+    for (var value0 in index0) {
+      var entity0 = entityKeys[value0];
+
+      if (index1 = index0[value0]) {
+        // If a key is specified, use only that part of index 1.
+        if (key1) (tmp = index1, index1 = {})[key1] = tmp[key1];
+        for (var value1 in index1) {
+          var entity1 = entityKeys[value1];
+
+          if (index2 = index1[value1]) {
+            // If a key is specified, use only that part of index 2, if it exists.
+            var values = key2 ? (key2 in index2 ? [key2] : []) : Object.keys(index2);
+            // Create quads for all items found in index 2.
+            for (var l = 0; l < values.length; l++) {
+              var parts = { subject: null, predicate: null, object: null };
+              parts[name0] = fromId(entity0, this._factory);
+              parts[name1] = fromId(entity1, this._factory);
+              parts[name2] = fromId(entityKeys[values[l]], this._factory);
+              var quad = this._factory.quad(
+                parts.subject, parts.predicate, parts.object, fromId(graph, this._factory));
+              if (array)
+                array.push(quad);
+              else if (callback(quad))
+                return true;
+            }
+          }
+        }
+      }
+    }
+    return array;
+  }
+
+  // ### `_loop` executes the callback on all keys of index 0
+  _loop(index0, callback) {
+    for (var key0 in index0)
+      callback(key0);
+  }
+
+  // ### `_loopByKey0` executes the callback on all keys of a certain entry in index 0
+  _loopByKey0(index0, key0, callback) {
+    var index1, key1;
+    if (index1 = index0[key0]) {
+      for (key1 in index1)
+        callback(key1);
+    }
+  }
+
+  // ### `_loopByKey1` executes the callback on given keys of all entries in index 0
+  _loopByKey1(index0, key1, callback) {
+    var key0, index1;
+    for (key0 in index0) {
+      index1 = index0[key0];
+      if (index1[key1])
+        callback(key0);
+    }
+  }
+
+  // ### `_loopBy2Keys` executes the callback on given keys of certain entries in index 2
+  _loopBy2Keys(index0, key0, key1, callback) {
+    var index1, index2, key2;
+    if ((index1 = index0[key0]) && (index2 = index1[key1])) {
+      for (key2 in index2)
+        callback(key2);
+    }
+  }
+
+  // ### `_countInIndex` counts matching quads in a three-layered index.
+  // The index base is `index0` and the keys at each level are `key0`, `key1`, and `key2`.
+  // Any of these keys can be undefined, which is interpreted as a wildcard.
+  _countInIndex(index0, key0, key1, key2) {
+    var count = 0, tmp, index1, index2;
+
+    // If a key is specified, count only that part of index 0
+    if (key0) (tmp = index0, index0 = {})[key0] = tmp[key0];
+    for (var value0 in index0) {
+      if (index1 = index0[value0]) {
+        // If a key is specified, count only that part of index 1
+        if (key1) (tmp = index1, index1 = {})[key1] = tmp[key1];
+        for (var value1 in index1) {
+          if (index2 = index1[value1]) {
+            // If a key is specified, count the quad if it exists
+            if (key2) (key2 in index2) && count++;
+            // Otherwise, count all quads
+            else count += Object.keys(index2).length;
+          }
+        }
+      }
+    }
+    return count;
+  }
+
+  // ### `_getGraphs` returns an array with the given graph,
+  // or all graphs if the argument is null or undefined.
+  _getGraphs(graph) {
+    if (!isString(graph))
+      return this._graphs;
+    var graphs = {};
+    graphs[graph] = this._graphs[graph];
+    return graphs;
+  }
+
+  // ### `_uniqueEntities` returns a function that accepts an entity ID
+  // and passes the corresponding entity to callback if it hasn't occurred before.
+  _uniqueEntities(callback) {
+    var uniqueIds = Object.create(null), entities = this._entities;
+    return function (id) {
+      if (!(id in uniqueIds)) {
+        uniqueIds[id] = true;
+        callback(fromId(entities[id]));
+      }
+    };
+  }
+
+  // ## Public methods
+
+  // ### `addQuad` adds a new quad to the store.
+  // Returns if the quad index has changed, if the quad did not already exist.
+  addQuad(subject, predicate, object, graph) {
+    // Shift arguments if a quad object is given instead of components
+    if (!predicate)
+      graph = subject.graph, object = subject.object,
+        predicate = subject.predicate, subject = subject.subject;
+
+    // Convert terms to internal string representation
+    subject = toId(subject);
+    predicate = toId(predicate);
+    object = toId(object);
+    graph = toId(graph);
+
+    // Find the graph that will contain the triple
+    var graphItem = this._graphs[graph];
+    // Create the graph if it doesn't exist yet
+    if (!graphItem) {
+      graphItem = this._graphs[graph] = { subjects: {}, predicates: {}, objects: {} };
+      // Freezing a graph helps subsequent `add` performance,
+      // and properties will never be modified anyway
+      Object.freeze(graphItem);
+    }
+
+    // Since entities can often be long IRIs, we avoid storing them in every index.
+    // Instead, we have a separate index that maps entities to numbers,
+    // which are then used as keys in the other indexes.
+    var ids = this._ids;
+    var entities = this._entities;
+    subject   = ids[subject]   || (ids[entities[++this._id] = subject]   = this._id);
+    predicate = ids[predicate] || (ids[entities[++this._id] = predicate] = this._id);
+    object    = ids[object]    || (ids[entities[++this._id] = object]    = this._id);
+
+    var changed = this._addToIndex(graphItem.subjects,   subject,   predicate, object);
+    this._addToIndex(graphItem.predicates, predicate, object,    subject);
+    this._addToIndex(graphItem.objects,    object,    subject,   predicate);
+
+    // The cached quad count is now invalid
+    this._size = null;
+    return changed;
+  }
+
+  // ### `addQuads` adds multiple quads to the store
+  addQuads(quads) {
+    for (var i = 0; i < quads.length; i++)
+      this.addQuad(quads[i]);
+  }
+
+  // ### `import` adds a stream of quads to the store
+  import(stream) {
+    var self = this;
+    stream.on('data', function (quad) { self.addQuad(quad); });
+    return stream;
+  }
+
+  // ### `removeQuad` removes a quad from the store if it exists
+  removeQuad(subject, predicate, object, graph) {
+    // Shift arguments if a quad object is given instead of components
+    if (!predicate)
+      graph = subject.graph, object = subject.object,
+        predicate = subject.predicate, subject = subject.subject;
+
+    // Convert terms to internal string representation
+    subject = toId(subject);
+    predicate = toId(predicate);
+    object = toId(object);
+    graph = toId(graph);
+
+    // Find internal identifiers for all components
+    // and verify the quad exists.
+    var graphItem, ids = this._ids, graphs = this._graphs, subjects, predicates;
+    if (!(subject    = ids[subject]) || !(predicate = ids[predicate]) ||
+        !(object     = ids[object])  || !(graphItem = graphs[graph])  ||
+        !(subjects   = graphItem.subjects[subject]) ||
+        !(predicates = subjects[predicate]) ||
+        !(object in predicates))
+      return false;
+
+    // Remove it from all indexes
+    this._removeFromIndex(graphItem.subjects,   subject,   predicate, object);
+    this._removeFromIndex(graphItem.predicates, predicate, object,    subject);
+    this._removeFromIndex(graphItem.objects,    object,    subject,   predicate);
+    if (this._size !== null) this._size--;
+
+    // Remove the graph if it is empty
+    for (subject in graphItem.subjects) return true;
+    delete graphs[graph];
+    return true;
+  }
+
+  // ### `removeQuads` removes multiple quads from the store
+  removeQuads(quads) {
+    for (var i = 0; i < quads.length; i++)
+      this.removeQuad(quads[i]);
+  }
+
+  // ### `remove` removes a stream of quads from the store
+  remove(stream) {
+    var self = this;
+    stream.on('data', function (quad) { self.removeQuad(quad); });
+    return stream;
+  }
+
+  // ### `removeMatches` removes all matching quads from the store
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  removeMatches(subject, predicate, object, graph) {
+    return this.remove(this.match(subject, predicate, object, graph));
+  }
+
+  // ### `deleteGraph` removes all triples with the given graph from the store
+  deleteGraph(graph) {
+    return this.removeMatches(null, null, null, graph);
+  }
+
+  // ### `getQuads` returns an array of quads matching a pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  getQuads(subject, predicate, object, graph) {
+    // Convert terms to internal string representation
+    subject = subject && toId(subject);
+    predicate = predicate && toId(predicate);
+    object = object && toId(object);
+    graph = graph && toId(graph);
+
+    var quads = [], graphs = this._getGraphs(graph), content,
+        ids = this._ids, subjectId, predicateId, objectId;
+
+    // Translate IRIs to internal index keys.
+    if (isString(subject)   && !(subjectId   = ids[subject])   ||
+        isString(predicate) && !(predicateId = ids[predicate]) ||
+        isString(object)    && !(objectId    = ids[object]))
+      return quads;
+
+    for (var graphId in graphs) {
+      // Only if the specified graph contains triples, there can be results
+      if (content = graphs[graphId]) {
+        // Choose the optimal index, based on what fields are present
+        if (subjectId) {
+          if (objectId)
+            // If subject and object are given, the object index will be the fastest
+            this._findInIndex(content.objects, objectId, subjectId, predicateId,
+                              'object', 'subject', 'predicate', graphId, null, quads);
+          else
+            // If only subject and possibly predicate are given, the subject index will be the fastest
+            this._findInIndex(content.subjects, subjectId, predicateId, null,
+                              'subject', 'predicate', 'object', graphId, null, quads);
+        }
+        else if (predicateId)
+          // If only predicate and possibly object are given, the predicate index will be the fastest
+          this._findInIndex(content.predicates, predicateId, objectId, null,
+                            'predicate', 'object', 'subject', graphId, null, quads);
+        else if (objectId)
+          // If only object is given, the object index will be the fastest
+          this._findInIndex(content.objects, objectId, null, null,
+                            'object', 'subject', 'predicate', graphId, null, quads);
+        else
+          // If nothing is given, iterate subjects and predicates first
+          this._findInIndex(content.subjects, null, null, null,
+                            'subject', 'predicate', 'object', graphId, null, quads);
+      }
+    }
+    return quads;
+  }
+
+  // ### `match` returns a stream of quads matching a pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  match(subject, predicate, object, graph) {
+    var self = this;
+    var stream = new Readable({ objectMode: true });
+
+    // Initialize stream once it is being read
+    stream._read = function () {
+      stream._read = function () {};
+      var quads = self.getQuads(subject, predicate, object, graph);
+      for (var quad of quads) {
+        stream.push(quad);
+      }
+      stream.push(null);
+    };
+
+    return stream;
+  }
+
+  // ### `countQuads` returns the number of quads matching a pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  countQuads(subject, predicate, object, graph) {
+    // Convert terms to internal string representation
+    subject = subject && toId(subject);
+    predicate = predicate && toId(predicate);
+    object = object && toId(object);
+    graph = graph && toId(graph);
+
+    var count = 0, graphs = this._getGraphs(graph), content,
+        ids = this._ids, subjectId, predicateId, objectId;
+
+    // Translate IRIs to internal index keys.
+    if (isString(subject)   && !(subjectId   = ids[subject])   ||
+        isString(predicate) && !(predicateId = ids[predicate]) ||
+        isString(object)    && !(objectId    = ids[object]))
+      return 0;
+
+    for (var graphId in graphs) {
+      // Only if the specified graph contains triples, there can be results
+      if (content = graphs[graphId]) {
+        // Choose the optimal index, based on what fields are present
+        if (subject) {
+          if (object)
+            // If subject and object are given, the object index will be the fastest
+            count += this._countInIndex(content.objects, objectId, subjectId, predicateId);
+          else
+            // If only subject and possibly predicate are given, the subject index will be the fastest
+            count += this._countInIndex(content.subjects, subjectId, predicateId, objectId);
+        }
+        else if (predicate) {
+          // If only predicate and possibly object are given, the predicate index will be the fastest
+          count += this._countInIndex(content.predicates, predicateId, objectId, subjectId);
+        }
+        else {
+          // If only object is possibly given, the object index will be the fastest
+          count += this._countInIndex(content.objects, objectId, subjectId, predicateId);
+        }
+      }
+    }
+    return count;
+  }
+
+  // ### `forEach` executes the callback on all quads.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  forEach(callback, subject, predicate, object, graph) {
+    this.some(function (quad) {
+      callback(quad);
+      return false;
+    }, subject, predicate, object, graph);
+  }
+
+  // ### `every` executes the callback on all quads,
+  // and returns `true` if it returns truthy for all them.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  every(callback, subject, predicate, object, graph) {
+    var some = false;
+    var every = !this.some(function (quad) {
+      some = true;
+      return !callback(quad);
+    }, subject, predicate, object, graph);
+    return some && every;
+  }
+
+  // ### `some` executes the callback on all quads,
+  // and returns `true` if it returns truthy for any of them.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  some(callback, subject, predicate, object, graph) {
+    // Convert terms to internal string representation
+    subject = subject && toId(subject);
+    predicate = predicate && toId(predicate);
+    object = object && toId(object);
+    graph = graph && toId(graph);
+
+    var graphs = this._getGraphs(graph), content,
+        ids = this._ids, subjectId, predicateId, objectId;
+
+    // Translate IRIs to internal index keys.
+    if (isString(subject)   && !(subjectId   = ids[subject])   ||
+        isString(predicate) && !(predicateId = ids[predicate]) ||
+        isString(object)    && !(objectId    = ids[object]))
+      return false;
+
+    for (var graphId in graphs) {
+      // Only if the specified graph contains triples, there can be results
+      if (content = graphs[graphId]) {
+        // Choose the optimal index, based on what fields are present
+        if (subjectId) {
+          if (objectId) {
+          // If subject and object are given, the object index will be the fastest
+            if (this._findInIndex(content.objects, objectId, subjectId, predicateId,
+                                  'object', 'subject', 'predicate', graphId, callback, null))
+              return true;
+          }
+          else
+            // If only subject and possibly predicate are given, the subject index will be the fastest
+            if (this._findInIndex(content.subjects, subjectId, predicateId, null,
+                                  'subject', 'predicate', 'object', graphId, callback, null))
+              return true;
+        }
+        else if (predicateId) {
+          // If only predicate and possibly object are given, the predicate index will be the fastest
+          if (this._findInIndex(content.predicates, predicateId, objectId, null,
+                                'predicate', 'object', 'subject', graphId, callback, null)) {
+            return true;
+          }
+        }
+        else if (objectId) {
+          // If only object is given, the object index will be the fastest
+          if (this._findInIndex(content.objects, objectId, null, null,
+                                'object', 'subject', 'predicate', graphId, callback, null)) {
+            return true;
+          }
+        }
+        else
+        // If nothing is given, iterate subjects and predicates first
+        if (this._findInIndex(content.subjects, null, null, null,
+                              'subject', 'predicate', 'object', graphId, callback, null)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  // ### `getSubjects` returns all subjects that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  getSubjects(predicate, object, graph) {
+    var results = [];
+    this.forSubjects(function (s) { results.push(s); }, predicate, object, graph);
+    return results;
+  }
+
+  // ### `forSubjects` executes the callback on all subjects that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  forSubjects(callback, predicate, object, graph) {
+    // Convert terms to internal string representation
+    predicate = predicate && toId(predicate);
+    object = object && toId(object);
+    graph = graph && toId(graph);
+
+    var ids = this._ids, graphs = this._getGraphs(graph), content, predicateId, objectId;
+    callback = this._uniqueEntities(callback);
+
+    // Translate IRIs to internal index keys.
+    if (isString(predicate) && !(predicateId = ids[predicate]) ||
+        isString(object)    && !(objectId    = ids[object]))
+      return;
+
+    for (graph in graphs) {
+      // Only if the specified graph contains triples, there can be results
+      if (content = graphs[graph]) {
+        // Choose optimal index based on which fields are wildcards
+        if (predicateId) {
+          if (objectId)
+            // If predicate and object are given, the POS index is best.
+            this._loopBy2Keys(content.predicates, predicateId, objectId, callback);
+          else
+            // If only predicate is given, the SPO index is best.
+            this._loopByKey1(content.subjects, predicateId, callback);
+        }
+        else if (objectId)
+          // If only object is given, the OSP index is best.
+          this._loopByKey0(content.objects, objectId, callback);
+        else
+          // If no params given, iterate all the subjects
+          this._loop(content.subjects, callback);
+      }
+    }
+  }
+
+  // ### `getPredicates` returns all predicates that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  getPredicates(subject, object, graph) {
+    var results = [];
+    this.forPredicates(function (p) { results.push(p); }, subject, object, graph);
+    return results;
+  }
+
+  // ### `forPredicates` executes the callback on all predicates that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  forPredicates(callback, subject, object, graph) {
+    // Convert terms to internal string representation
+    subject = subject && toId(subject);
+    object = object && toId(object);
+    graph = graph && toId(graph);
+
+    var ids = this._ids, graphs = this._getGraphs(graph), content, subjectId, objectId;
+    callback = this._uniqueEntities(callback);
+
+    // Translate IRIs to internal index keys.
+    if (isString(subject) && !(subjectId = ids[subject]) ||
+        isString(object)  && !(objectId  = ids[object]))
+      return;
+
+    for (graph in graphs) {
+      // Only if the specified graph contains triples, there can be results
+      if (content = graphs[graph]) {
+        // Choose optimal index based on which fields are wildcards
+        if (subjectId) {
+          if (objectId)
+            // If subject and object are given, the OSP index is best.
+            this._loopBy2Keys(content.objects, objectId, subjectId, callback);
+          else
+            // If only subject is given, the SPO index is best.
+            this._loopByKey0(content.subjects, subjectId, callback);
+        }
+        else if (objectId)
+          // If only object is given, the POS index is best.
+          this._loopByKey1(content.predicates, objectId, callback);
+        else
+          // If no params given, iterate all the predicates.
+          this._loop(content.predicates, callback);
+      }
+    }
+  }
+
+  // ### `getObjects` returns all objects that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  getObjects(subject, predicate, graph) {
+    var results = [];
+    this.forObjects(function (o) { results.push(o); }, subject, predicate, graph);
+    return results;
+  }
+
+  // ### `forObjects` executes the callback on all objects that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  forObjects(callback, subject, predicate, graph) {
+    // Convert terms to internal string representation
+    subject = subject && toId(subject);
+    predicate = predicate && toId(predicate);
+    graph = graph && toId(graph);
+
+    var ids = this._ids, graphs = this._getGraphs(graph), content, subjectId, predicateId;
+    callback = this._uniqueEntities(callback);
+
+    // Translate IRIs to internal index keys.
+    if (isString(subject)   && !(subjectId   = ids[subject]) ||
+        isString(predicate) && !(predicateId = ids[predicate]))
+      return;
+
+    for (graph in graphs) {
+      // Only if the specified graph contains triples, there can be results
+      if (content = graphs[graph]) {
+        // Choose optimal index based on which fields are wildcards
+        if (subjectId) {
+          if (predicateId)
+            // If subject and predicate are given, the SPO index is best.
+            this._loopBy2Keys(content.subjects, subjectId, predicateId, callback);
+          else
+            // If only subject is given, the OSP index is best.
+            this._loopByKey1(content.objects, subjectId, callback);
+        }
+        else if (predicateId)
+          // If only predicate is given, the POS index is best.
+          this._loopByKey0(content.predicates, predicateId, callback);
+        else
+          // If no params given, iterate all the objects.
+          this._loop(content.objects, callback);
+      }
+    }
+  }
+
+  // ### `getGraphs` returns all graphs that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  getGraphs(subject, predicate, object) {
+    var results = [];
+    this.forGraphs(function (g) { results.push(g); }, subject, predicate, object);
+    return results;
+  }
+
+  // ### `forGraphs` executes the callback on all graphs that match the pattern.
+  // Setting any field to `undefined` or `null` indicates a wildcard.
+  forGraphs(callback, subject, predicate, object) {
+    for (var graph in this._graphs) {
+      this.some(function (quad) {
+        callback(quad.graph);
+        return true; // Halt iteration of some()
+      }, subject, predicate, object, graph);
+    }
+  }
+
+  // ### `createBlankNode` creates a new blank node, returning its name
+  createBlankNode(suggestedName) {
+    var name, index;
+    // Generate a name based on the suggested name
+    if (suggestedName) {
+      name = suggestedName = '_:' + suggestedName, index = 1;
+      while (this._ids[name])
+        name = suggestedName + index++;
+    }
+    // Generate a generic blank node name
+    else {
+      do { name = '_:b' + this._blankNodeIndex++; }
+      while (this._ids[name]);
+    }
+    // Add the blank node to the entities, avoiding the generation of duplicates
+    this._ids[name] = ++this._id;
+    this._entities[this._id] = name;
+    return this._factory.blankNode(name.substr(2));
+  }
+}
+
+// Determines whether the argument is a string
+function isString(s) {
+  return typeof s === 'string' || s instanceof String;
+}
+
+// ## Exports
+module.exports = N3Store;
+
+},{"./N3DataFactory":43,"stream":73}],47:[function(require,module,exports){
+// **N3StreamParser** parses a text stream into a quad stream.
+var Transform = require('stream').Transform,
+    N3Parser = require('./N3Parser.js');
+
+// ## Constructor
+class N3StreamParser extends Transform {
+  constructor(options) {
+    super({ decodeStrings: true });
+    this._readableState.objectMode = true;
+
+    // Set up parser with dummy stream to obtain `data` and `end` callbacks
+    var self = this, parser = new N3Parser(options), onData, onEnd;
+    parser.parse({
+      on: function (event, callback) {
+        switch (event) {
+        case 'data': onData = callback; break;
+        case 'end':   onEnd = callback; break;
+        }
+      },
+    },
+      // Handle quads by pushing them down the pipeline
+      function (error, quad) { error && self.emit('error', error) || quad && self.push(quad); },
+      // Emit prefixes through the `prefix` event
+      function (prefix, uri) { self.emit('prefix', prefix, uri); }
+    );
+
+    // Implement Transform methods through parser callbacks
+    this._transform = function (chunk, encoding, done) { onData(chunk); done(); };
+    this._flush = function (done) { onEnd(); done(); };
+  }
+
+  // ### Parses a stream of strings
+  import(stream) {
+    var self = this;
+    stream.on('data',  function (chunk) { self.write(chunk); });
+    stream.on('end',   function ()      { self.end(); });
+    stream.on('error', function (error) { self.emit('error', error); });
+    return this;
+  }
+}
+
+// ## Exports
+module.exports = N3StreamParser;
+
+},{"./N3Parser.js":45,"stream":73}],48:[function(require,module,exports){
+// **N3StreamWriter** serializes a quad stream into a text stream.
+var Transform = require('stream').Transform,
+    N3Writer = require('./N3Writer.js');
+
+// ## Constructor
+class N3StreamWriter extends Transform {
+  constructor(options) {
+    super({ encoding: 'utf8' });
+    this._writableState.objectMode = true;
+
+    // Set up writer with a dummy stream object
+    var self = this;
+    var writer = this._writer = new N3Writer({
+      write: function (quad, encoding, callback) { self.push(quad); callback && callback(); },
+      end: function (callback) { self.push(null); callback && callback(); },
+    }, options);
+
+    // Implement Transform methods on top of writer
+    this._transform = function (quad, encoding, done) { writer.addQuad(quad, done); };
+    this._flush = function (done) { writer.end(done); };
+  }
+
+// ### Serializes a stream of quads
+  import(stream) {
+    var self = this;
+    stream.on('data',   function (quad)  { self.write(quad); });
+    stream.on('end',    function ()      { self.end(); });
+    stream.on('error',  function (error) { self.emit('error', error); });
+    stream.on('prefix', function (prefix, iri) { self._writer.addPrefix(prefix, iri); });
+    return this;
+  }
+}
+
+
+
+// ## Exports
+module.exports = N3StreamWriter;
+
+},{"./N3Writer.js":50,"stream":73}],49:[function(require,module,exports){
+// **N3Util** provides N3 utility functions.
+
+var DataFactory = require('./N3DataFactory');
+
+var N3Util = {
+  // Tests whether the given term represents an IRI
+  isNamedNode: function (term) {
+    return !!term && term.termType === 'NamedNode';
+  },
+
+  // Tests whether the given term represents a blank node
+  isBlankNode: function (term) {
+    return !!term && term.termType === 'BlankNode';
+  },
+
+  // Tests whether the given term represents a literal
+  isLiteral: function (term) {
+    return !!term && term.termType === 'Literal';
+  },
+
+  // Tests whether the given term represents a variable
+  isVariable: function (term) {
+    return !!term && term.termType === 'Variable';
+  },
+
+  // Tests whether the given term represents the default graph
+  isDefaultGraph: function (term) {
+    return !!term && term.termType === 'DefaultGraph';
+  },
+
+  // Tests whether the given quad is in the default graph
+  inDefaultGraph: function (quad) {
+    return N3Util.isDefaultGraph(quad.graph);
+  },
+
+  // Creates a function that prepends the given IRI to a local name
+  prefix: function (iri, factory) {
+    return N3Util.prefixes({ '': iri }, factory)('');
+  },
+
+  // Creates a function that allows registering and expanding prefixes
+  prefixes: function (defaultPrefixes, factory) {
+    // Add all of the default prefixes
+    var prefixes = Object.create(null);
+    for (var prefix in defaultPrefixes)
+      processPrefix(prefix, defaultPrefixes[prefix]);
+    // Set the default factory if none was specified
+    factory = factory || DataFactory;
+
+    // Registers a new prefix (if an IRI was specified)
+    // or retrieves a function that expands an existing prefix (if no IRI was specified)
+    function processPrefix(prefix, iri) {
+      // Create a new prefix if an IRI is specified or the prefix doesn't exist
+      if (typeof iri === 'string') {
+        // Create a function that expands the prefix
+        var cache = Object.create(null);
+        prefixes[prefix] = function (local) {
+          return cache[local] || (cache[local] = factory.namedNode(iri + local));
+        };
+      }
+      else if (!(prefix in prefixes)) {
+        throw new Error('Unknown prefix: ' + prefix);
+      }
+      return prefixes[prefix];
+    }
+    return processPrefix;
+  },
+};
+
+// ## Exports
+module.exports = N3Util;
+
+},{"./N3DataFactory":43}],50:[function(require,module,exports){
+// **N3Writer** writes N3 documents.
+
+var namespaces = require('./IRIs'),
+    DataFactory = require('./N3DataFactory');
+
+var DEFAULTGRAPH = DataFactory.defaultGraph();
+
+var rdf = namespaces.rdf,
+    xsd = namespaces.xsd;
+
+// Characters in literals that require escaping
+var escape    = /["\\\t\n\r\b\f\u0000-\u0019\ud800-\udbff]/,
+    escapeAll = /["\\\t\n\r\b\f\u0000-\u0019]|[\ud800-\udbff][\udc00-\udfff]/g,
+    escapedCharacters = {
+      '\\': '\\\\', '"': '\\"', '\t': '\\t',
+      '\n': '\\n', '\r': '\\r', '\b': '\\b', '\f': '\\f',
+    };
+
+// ## Placeholder class to represent already pretty-printed terms
+class SerializedTerm extends DataFactory.internal.Term {
+  // Pretty-printed nodes are not equal to any other node
+  // (e.g., [] does not equal [])
+  equals() {
+    return false;
+  }
+}
+
+// ## Constructor
+class N3Writer {
+  constructor(outputStream, options) {
+    // ### `_prefixRegex` matches a prefixed name or IRI that begins with one of the added prefixes
+    this._prefixRegex = /$0^/;
+
+    // Shift arguments if the first argument is not a stream
+    if (outputStream && typeof outputStream.write !== 'function')
+      options = outputStream, outputStream = null;
+    options = options || {};
+
+    // If no output stream given, send the output as string through the end callback
+    if (!outputStream) {
+      var output = '';
+      this._outputStream = {
+        write(chunk, encoding, done) { output += chunk; done && done(); },
+        end:   function (done) { done && done(null, output); },
+      };
+      this._endStream = true;
+    }
+    else {
+      this._outputStream = outputStream;
+      this._endStream = options.end === undefined ? true : !!options.end;
+    }
+
+    // Initialize writer, depending on the format
+    this._subject = null;
+    if (!(/triple|quad/i).test(options.format)) {
+      this._graph = DEFAULTGRAPH;
+      this._prefixIRIs = Object.create(null);
+      options.prefixes && this.addPrefixes(options.prefixes);
+    }
+    else {
+      this._writeQuad = this._writeQuadLine;
+    }
+  }
+
+  // ## Private methods
+
+  // ### Whether the current graph is the default graph
+  get _inDefaultGraph() {
+    return DEFAULTGRAPH.equals(this._graph);
+  }
+
+  // ### `_write` writes the argument to the output stream
+  _write(string, callback) {
+    this._outputStream.write(string, 'utf8', callback);
+  }
+
+  // ### `_writeQuad` writes the quad to the output stream
+  _writeQuad(subject, predicate, object, graph, done) {
+    try {
+      // Write the graph's label if it has changed
+      if (!graph.equals(this._graph)) {
+        // Close the previous graph and start the new one
+        this._write((this._subject === null ? '' : (this._inDefaultGraph ? '.\n' : '\n}\n')) +
+                    (DEFAULTGRAPH.equals(graph) ? '' : this._encodeIriOrBlank(graph) + ' {\n'));
+        this._graph = graph;
+        this._subject = null;
+      }
+      // Don't repeat the subject if it's the same
+      if (subject.equals(this._subject)) {
+        // Don't repeat the predicate if it's the same
+        if (predicate.equals(this._predicate))
+          this._write(', ' + this._encodeObject(object), done);
+        // Same subject, different predicate
+        else
+          this._write(';\n    ' +
+                      this._encodePredicate(this._predicate = predicate) + ' ' +
+                      this._encodeObject(object), done);
+      }
+      // Different subject; write the whole quad
+      else
+        this._write((this._subject === null ? '' : '.\n') +
+                    this._encodeIriOrBlank(this._subject = subject) + ' ' +
+                    this._encodePredicate(this._predicate = predicate) + ' ' +
+                    this._encodeObject(object), done);
+    }
+    catch (error) { done && done(error); }
+  }
+
+  // ### `_writeQuadLine` writes the quad to the output stream as a single line
+  _writeQuadLine(subject, predicate, object, graph, done) {
+    // Write the quad without prefixes
+    delete this._prefixMatch;
+    this._write(this.quadToString(subject, predicate, object, graph), done);
+  }
+
+  // ### `quadToString` serializes a quad as a string
+  quadToString(subject, predicate, object, graph) {
+    return  this._encodeIriOrBlank(subject)   + ' ' +
+            this._encodeIriOrBlank(predicate) + ' ' +
+            this._encodeObject(object) +
+            (graph && graph.value ? ' ' + this._encodeIriOrBlank(graph) + ' .\n' : ' .\n');
+  }
+
+  // ### `quadsToString` serializes an array of quads as a string
+  quadsToString(quads) {
+    return quads.map(function (t) {
+      return this.quadToString(t.subject, t.predicate, t.object, t.graph);
+    }, this).join('');
+  }
+
+  // ### `_encodeIriOrBlank` represents an IRI or blank node
+  _encodeIriOrBlank(entity) {
+    // A blank node or list is represented as-is
+    if (entity.termType !== 'NamedNode')
+      return 'id' in entity ? entity.id : '_:' + entity.value;
+    // Escape special characters
+    var iri = entity.value;
+    if (escape.test(iri))
+      iri = iri.replace(escapeAll, characterReplacer);
+    // Try to represent the IRI as prefixed name
+    var prefixMatch = this._prefixRegex.exec(iri);
+    return !prefixMatch ? '<' + iri + '>' :
+           (!prefixMatch[1] ? iri : this._prefixIRIs[prefixMatch[1]] + prefixMatch[2]);
+  }
+
+  // ### `_encodeLiteral` represents a literal
+  _encodeLiteral(literal) {
+    // Escape special characters
+    var value = literal.value;
+    if (escape.test(value))
+      value = value.replace(escapeAll, characterReplacer);
+    // Write the literal, possibly with type or language
+    if (literal.language)
+      return '"' + value + '"@' + literal.language;
+    else if (literal.datatype.value !== xsd.string)
+      return '"' + value + '"^^' + this._encodeIriOrBlank(literal.datatype);
+    else
+      return '"' + value + '"';
+  }
+
+  // ### `_encodePredicate` represents a predicate
+  _encodePredicate(predicate) {
+    return predicate.value === rdf.type ? 'a' : this._encodeIriOrBlank(predicate);
+  }
+
+  // ### `_encodeObject` represents an object
+  _encodeObject(object) {
+    return object.termType === 'Literal' ? this._encodeLiteral(object) : this._encodeIriOrBlank(object);
+  }
+
+  // ### `_blockedWrite` replaces `_write` after the writer has been closed
+  _blockedWrite() {
+    throw new Error('Cannot write because the writer has been closed.');
+  }
+
+  // ### `addQuad` adds the quad to the output stream
+  addQuad(subject, predicate, object, graph, done) {
+    // The quad was given as an object, so shift parameters
+    if (object === undefined)
+      this._writeQuad(subject.subject, subject.predicate, subject.object, subject.graph, predicate);
+    // The optional `graph` parameter was not provided
+    else if (typeof graph === 'function')
+      this._writeQuad(subject, predicate, object, DEFAULTGRAPH, graph);
+    // The `graph` parameter was provided
+    else
+      this._writeQuad(subject, predicate, object, graph || DEFAULTGRAPH, done);
+  }
+
+  // ### `addQuads` adds the quads to the output stream
+  addQuads(quads) {
+    for (var i = 0; i < quads.length; i++)
+      this.addQuad(quads[i]);
+  }
+
+  // ### `addPrefix` adds the prefix to the output stream
+  addPrefix(prefix, iri, done) {
+    var prefixes = {};
+    prefixes[prefix] = iri;
+    this.addPrefixes(prefixes, done);
+  }
+
+  // ### `addPrefixes` adds the prefixes to the output stream
+  addPrefixes(prefixes, done) {
+    // Add all useful prefixes
+    var prefixIRIs = this._prefixIRIs, hasPrefixes = false;
+    for (var prefix in prefixes) {
+      // Verify whether the prefix can be used and does not exist yet
+      var iri = prefixes[prefix];
+      if (typeof iri !== 'string')
+        iri = iri.value;
+      if (/[#\/]$/.test(iri) && prefixIRIs[iri] !== (prefix += ':')) {
+        hasPrefixes = true;
+        prefixIRIs[iri] = prefix;
+        // Finish a possible pending quad
+        if (this._subject !== null) {
+          this._write(this._inDefaultGraph ? '.\n' : '\n}\n');
+          this._subject = null, this._graph = '';
+        }
+        // Write prefix
+        this._write('@prefix ' + prefix + ' <' + iri + '>.\n');
+      }
+    }
+    // Recreate the prefix matcher
+    if (hasPrefixes) {
+      var IRIlist = '', prefixList = '';
+      for (var prefixIRI in prefixIRIs) {
+        IRIlist += IRIlist ? '|' + prefixIRI : prefixIRI;
+        prefixList += (prefixList ? '|' : '') + prefixIRIs[prefixIRI];
+      }
+      IRIlist = IRIlist.replace(/[\]\/\(\)\*\+\?\.\\\$]/g, '\\$&');
+      this._prefixRegex = new RegExp('^(?:' + prefixList + ')[^\/]*$|' +
+                                     '^(' + IRIlist + ')([a-zA-Z][\\-_a-zA-Z0-9]*)$');
+    }
+    // End a prefix block with a newline
+    this._write(hasPrefixes ? '\n' : '', done);
+  }
+
+  // ### `blank` creates a blank node with the given content
+  blank(predicate, object) {
+    var children = predicate, child, length;
+    // Empty blank node
+    if (predicate === undefined)
+      children = [];
+    // Blank node passed as blank(Term("predicate"), Term("object"))
+    else if (predicate.termType)
+      children = [{ predicate: predicate, object: object }];
+    // Blank node passed as blank({ predicate: predicate, object: object })
+    else if (!('length' in predicate))
+      children = [predicate];
+
+    switch (length = children.length) {
+    // Generate an empty blank node
+    case 0:
+      return new SerializedTerm('[]');
+    // Generate a non-nested one-triple blank node
+    case 1:
+      child = children[0];
+      if (!(child.object instanceof SerializedTerm))
+        return new SerializedTerm('[ ' + this._encodePredicate(child.predicate) + ' ' +
+                                  this._encodeObject(child.object) + ' ]');
+    // Generate a multi-triple or nested blank node
+    default:
+      var contents = '[';
+      // Write all triples in order
+      for (var i = 0; i < length; i++) {
+        child = children[i];
+        // Write only the object is the predicate is the same as the previous
+        if (child.predicate.equals(predicate))
+          contents += ', ' + this._encodeObject(child.object);
+        // Otherwise, write the predicate and the object
+        else {
+          contents += (i ? ';\n  ' : '\n  ') +
+                      this._encodePredicate(child.predicate) + ' ' +
+                      this._encodeObject(child.object);
+          predicate = child.predicate;
+        }
+      }
+      return new SerializedTerm(contents + '\n]');
+    }
+  }
+
+  // ### `list` creates a list node with the given content
+  list(elements) {
+    var length = elements && elements.length || 0, contents = new Array(length);
+    for (var i = 0; i < length; i++)
+      contents[i] = this._encodeObject(elements[i]);
+    return new SerializedTerm('(' + contents.join(' ') + ')');
+  }
+
+  // ### `end` signals the end of the output stream
+  end(done) {
+    // Finish a possible pending quad
+    if (this._subject !== null) {
+      this._write(this._inDefaultGraph ? '.\n' : '\n}\n');
+      this._subject = null;
+    }
+    // Disallow further writing
+    this._write = this._blockedWrite;
+
+    // Try to end the underlying stream, ensuring done is called exactly one time
+    var singleDone = done && function (error, result) { singleDone = null, done(error, result); };
+    if (this._endStream) {
+      try { return this._outputStream.end(singleDone); }
+      catch (error) { /* error closing stream */ }
+    }
+    singleDone && singleDone();
+  }
+}
+
+// Replaces a character by its escaped version
+function characterReplacer(character) {
+  // Replace a single character by its escaped version
+  var result = escapedCharacters[character];
+  if (result === undefined) {
+    // Replace a single character with its 4-bit unicode escape sequence
+    if (character.length === 1) {
+      result = character.charCodeAt(0).toString(16);
+      result = '\\u0000'.substr(0, 6 - result.length) + result;
+    }
+    // Replace a surrogate pair with its 8-bit unicode escape sequence
+    else {
+      result = ((character.charCodeAt(0) - 0xD800) * 0x400 +
+                 character.charCodeAt(1) + 0x2400).toString(16);
+      result = '\\U00000000'.substr(0, 10 - result.length) + result;
+    }
+  }
+  return result;
+}
+
+// ## Exports
+module.exports = N3Writer;
+
+},{"./IRIs":42,"./N3DataFactory":43}],51:[function(require,module,exports){
 (function (process){
 'use strict';
 
@@ -5372,7 +8383,7 @@ function nextTick(fn, arg1, arg2, arg3) {
 
 
 }).call(this,require('_process'))
-},{"_process":42}],42:[function(require,module,exports){
+},{"_process":52}],52:[function(require,module,exports){
 // shim for using process in browser
 var process = module.exports = {};
 
@@ -5558,10 +8569,708 @@ process.chdir = function (dir) {
 };
 process.umask = function() { return 0; };
 
-},{}],43:[function(require,module,exports){
+},{}],53:[function(require,module,exports){
+"use strict";
+function __export(m) {
+    for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
+}
+Object.defineProperty(exports, "__esModule", { value: true });
+__export(require("./lib/RdfXmlParser"));
+
+},{"./lib/RdfXmlParser":54}],54:[function(require,module,exports){
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const relative_to_absolute_iri_1 = require("relative-to-absolute-iri");
+const sax_1 = require("sax");
+const stream_1 = require("stream");
+class RdfXmlParser extends stream_1.Transform {
+    constructor(args) {
+        super({ objectMode: true });
+        this.activeTagStack = [];
+        this.nodeIds = {};
+        if (args) {
+            Object.assign(this, args);
+            this.options = args;
+        }
+        if (!this.dataFactory) {
+            this.dataFactory = require('@rdfjs/data-model');
+        }
+        if (!this.baseIRI) {
+            this.baseIRI = '';
+        }
+        if (!this.defaultGraph) {
+            this.defaultGraph = this.dataFactory.defaultGraph();
+        }
+        this.saxStream = sax_1.createStream(this.strict, { xmlns: false, position: false });
+        // Workaround for an issue in SAX where non-strict mode either lower- or upper-cases all tags.
+        if (!this.strict) {
+            this.saxStream._parser.looseCase = 'toString';
+        }
+        this.attachSaxListeners();
+    }
+    /**
+     * Parse the namespace of the given tag,
+     * and take into account the namespace of the parent tag that was already parsed.
+     * @param {Tag} tag A tag to parse the namespace from.
+     * @param {IActiveTag} parentTag The parent tag, or null if this tag is the root.
+     * @return {{[p: string]: string}[]} An array of namespaces,
+     *                                   where the last ones have a priority over the first ones.
+     */
+    static parseNamespace(tag, parentTag) {
+        const thisNs = {};
+        let hasNs = false;
+        for (const attributeKey in tag.attributes) {
+            if (attributeKey.startsWith('xmlns')) {
+                if (attributeKey.length === 5) {
+                    // Set default namespace
+                    hasNs = true;
+                    thisNs[''] = tag.attributes[attributeKey];
+                }
+                else if (attributeKey.charAt(5) === ':') {
+                    // Definition of a prefix
+                    hasNs = true;
+                    thisNs[attributeKey.substr(6)] = tag.attributes[attributeKey];
+                }
+            }
+        }
+        const parentNs = parentTag && parentTag.ns ? parentTag.ns : [RdfXmlParser.DEFAULT_NS];
+        return hasNs ? parentNs.concat([thisNs]) : parentNs;
+    }
+    /**
+     * Expand the given term value based on the given namespaces.
+     * @param {string} term A term value.
+     * @param {{[p: string]: string}[]} ns An array of namespaces,
+     *                                     where the last ones have a priority over the first ones.
+     * @return {IExpandedPrefix} An expanded prefix object.
+     */
+    static expandPrefixedTerm(term, ns) {
+        const colonIndex = term.indexOf(':');
+        let prefix;
+        let local;
+        if (colonIndex >= 0) {
+            // Prefix is set
+            prefix = term.substr(0, colonIndex);
+            local = term.substr(colonIndex + 1);
+        }
+        else {
+            // Prefix is not set, fallback to default namespace
+            prefix = '';
+            local = term;
+        }
+        let uri = null;
+        let defaultNamespace = null;
+        for (let i = ns.length - 1; i >= 0; i--) {
+            const nsElement = ns[i][prefix];
+            if (nsElement) {
+                uri = nsElement;
+                break;
+            }
+            else if (!defaultNamespace) {
+                defaultNamespace = ns[i][''];
+            }
+        }
+        if (!uri) {
+            // Error on unbound prefix
+            if (prefix && prefix !== 'xmlns') {
+                throw new Error(`The prefix '${prefix}' in term '${term}' was not bound.`);
+            }
+            // Fallback to default namespace if no match was found
+            uri = defaultNamespace || '';
+        }
+        return { prefix, local, uri };
+    }
+    /**
+     * Expand the given term based on the DOCTYPE entities.
+     * @param {string} term A term.
+     * @param {SAXParser} parser A SAX parser that has DOCTYPE entities.
+     * @return {string} The expanded or same term.
+     */
+    static expandDoctypeEntity(term, parser) {
+        if (term[0] === '&') {
+            const prefixEndPos = term.indexOf(';');
+            if (prefixEndPos > 0) {
+                const prefix = term.substr(1, prefixEndPos - 1);
+                const entities = parser.ENTITIES;
+                const expandedPrefix = entities[prefix];
+                if (expandedPrefix) {
+                    const suffix = term.substr(prefixEndPos);
+                    term = expandedPrefix + suffix;
+                }
+            }
+        }
+        return term;
+    }
+    /**
+     * Check if the given IRI is valid.
+     * @param {string} iri A potential IRI.
+     * @return {boolean} If the given IRI is valid.
+     */
+    static isValidIri(iri) {
+        return RdfXmlParser.IRI_REGEX.test(iri);
+    }
+    /**
+     * Parses the given text stream into a quad stream.
+     * @param {NodeJS.EventEmitter} stream A text stream.
+     * @return {NodeJS.EventEmitter} A quad stream.
+     */
+    import(stream) {
+        const output = new stream_1.PassThrough({ objectMode: true });
+        stream.on('error', (error) => parsed.emit('error', error));
+        stream.on('data', (data) => output.write(data));
+        stream.on('end', () => output.emit('end'));
+        const parsed = output.pipe(new RdfXmlParser(this.options));
+        return parsed;
+    }
+    _transform(chunk, encoding, callback) {
+        try {
+            this.saxStream.write(chunk, encoding);
+        }
+        catch (e) {
+            return callback(e);
+        }
+        callback();
+    }
+    /**
+     * Convert the given value to a IRI by taking into account the baseIRI.
+     *
+     * This will follow the RDF/XML spec for converting values with baseIRIs to a IRI.
+     *
+     * @param {string} value The value to convert to an IRI.
+     * @param {IActiveTag} activeTag The active tag.
+     * @return {NamedNode} an IRI.
+     */
+    valueToUri(value, activeTag) {
+        return this.uriToNamedNode(relative_to_absolute_iri_1.resolve(value, activeTag.baseIRI));
+    }
+    /**
+     * Convert the given value URI string to a named node.
+     *
+     * This throw an error if the URI is invalid.
+     *
+     * @param {string} uri A URI string.
+     * @return {NamedNode} a named node.
+     */
+    uriToNamedNode(uri) {
+        // Validate URI
+        if (!RdfXmlParser.isValidIri(uri)) {
+            throw new Error(`Invalid URI: ${uri}`);
+        }
+        return this.dataFactory.namedNode(uri);
+    }
+    /**
+     * Validate the given value as an NCName: https://www.w3.org/TR/xml-names/#NT-NCName
+     * If it is invalid, an error will thrown emitted.
+     * @param {string} value A value.
+     */
+    validateNcname(value) {
+        // Validate term as an NCName: https://www.w3.org/TR/xml-names/#NT-NCName
+        if (!RdfXmlParser.NCNAME_MATCHER.test(value)) {
+            throw new Error(`Not a valid NCName: ${value}`);
+        }
+    }
+    attachSaxListeners() {
+        this.saxStream.on('error', (error) => this.emit('error', error));
+        this.saxStream.on('opentag', this.onTag.bind(this));
+        this.saxStream.on('text', this.onText.bind(this));
+        this.saxStream.on('closetag', this.onCloseTag.bind(this));
+        this.saxStream.on('doctype', this.onDoctype.bind(this));
+    }
+    /**
+     * Handle the given tag.
+     * @param {QualifiedTag} tag A SAX tag.
+     */
+    onTag(tag) {
+        // Get parent tag
+        const parentTag = this.activeTagStack.length
+            ? this.activeTagStack[this.activeTagStack.length - 1] : null;
+        let currentParseType = ParseType.RESOURCE;
+        if (parentTag) {
+            parentTag.hadChildren = true;
+            currentParseType = parentTag.childrenParseType;
+        }
+        // Check if this tag needs to be converted to a string
+        if (parentTag && parentTag.childrenStringTags) {
+            // Convert this tag to a string
+            const tagName = tag.name;
+            let attributes = '';
+            for (const attributeKey in tag.attributes) {
+                attributes += ` ${attributeKey}="${tag.attributes[attributeKey]}"`;
+            }
+            const tagContents = `${tagName}${attributes}`;
+            const tagString = `<${tagContents}>`;
+            parentTag.childrenStringTags.push(tagString);
+            // Inherit the array, so that deeper tags are appended to this same array
+            const stringActiveTag = { childrenStringTags: parentTag.childrenStringTags };
+            stringActiveTag.childrenStringEmitClosingTag = `</${tagName}>`;
+            this.activeTagStack.push(stringActiveTag);
+            // Halt any further processing
+            return;
+        }
+        const activeTag = {};
+        if (parentTag) {
+            // Inherit language scope and baseIRI from parent
+            activeTag.language = parentTag.language;
+            activeTag.baseIRI = parentTag.baseIRI;
+        }
+        else {
+            activeTag.baseIRI = this.baseIRI;
+        }
+        this.activeTagStack.push(activeTag);
+        activeTag.ns = RdfXmlParser.parseNamespace(tag, parentTag);
+        if (currentParseType === ParseType.RESOURCE) {
+            this.onTagResource(tag, activeTag, parentTag, !parentTag);
+        }
+        else { // currentParseType === ParseType.PROPERTY
+            this.onTagProperty(tag, activeTag, parentTag);
+        }
+    }
+    /**
+     * Handle the given node element in resource-mode.
+     * @param {QualifiedTag} tag A SAX tag.
+     * @param {IActiveTag} activeTag The currently active tag.
+     * @param {IActiveTag} parentTag The parent tag or null.
+     * @param {boolean} rootTag If we are currently processing the root tag.
+     */
+    onTagResource(tag, activeTag, parentTag, rootTag) {
+        const tagExpanded = RdfXmlParser.expandPrefixedTerm(tag.name, activeTag.ns);
+        activeTag.childrenParseType = ParseType.PROPERTY;
+        // Assume that the current node is a _typed_ node (2.13), unless we find an rdf:Description as node name
+        let typedNode = true;
+        if (tagExpanded.uri === RdfXmlParser.RDF) {
+            // Check forbidden property element names
+            if (!rootTag && RdfXmlParser.FORBIDDEN_NODE_ELEMENTS.indexOf(tagExpanded.local) >= 0) {
+                throw new Error(`Illegal node element name: ${tagExpanded.local}`);
+            }
+            switch (tagExpanded.local) {
+                case 'RDF':
+                    // Tags under <rdf:RDF> must always be resources
+                    activeTag.childrenParseType = ParseType.RESOURCE;
+                case 'Description':
+                    typedNode = false;
+            }
+        }
+        const predicates = [];
+        const objects = [];
+        // Collect all attributes as triples
+        // Assign subject value only after all attributes have been processed, because baseIRI may change the final val
+        let activeSubjectValue = null;
+        let claimSubjectNodeId = false;
+        let subjectValueBlank = false;
+        let explicitType = null;
+        for (const attributeKey in tag.attributes) {
+            const attributeValue = tag.attributes[attributeKey];
+            const attributeKeyExpanded = RdfXmlParser.expandPrefixedTerm(attributeKey, activeTag.ns);
+            if (parentTag && attributeKeyExpanded.uri === RdfXmlParser.RDF) {
+                switch (attributeKeyExpanded.local) {
+                    case 'about':
+                        if (activeSubjectValue) {
+                            throw new Error(`Only one of rdf:about, rdf:nodeID and rdf:ID can be present, \
+while ${attributeValue} and ${activeSubjectValue} where found.`);
+                        }
+                        activeSubjectValue = attributeValue;
+                        continue;
+                    case 'ID':
+                        if (activeSubjectValue) {
+                            throw new Error(`Only one of rdf:about, rdf:nodeID and rdf:ID can be present, \
+while ${attributeValue} and ${activeSubjectValue} where found.`);
+                        }
+                        this.validateNcname(attributeValue);
+                        activeSubjectValue = '#' + attributeValue;
+                        claimSubjectNodeId = true;
+                        continue;
+                    case 'nodeID':
+                        if (activeSubjectValue) {
+                            throw new Error(`Only one of rdf:about, rdf:nodeID and rdf:ID can be present, \
+while ${attributeValue} and ${activeSubjectValue} where found.`);
+                        }
+                        this.validateNcname(attributeValue);
+                        activeSubjectValue = attributeValue;
+                        subjectValueBlank = true;
+                        continue;
+                    case 'bagID':
+                        throw new Error(`rdf:bagID is not supported.`);
+                    case 'type':
+                        // Emit the rdf:type later as named node instead of the default literal
+                        explicitType = attributeValue;
+                        continue;
+                    case 'aboutEach':
+                        throw new Error(`rdf:aboutEach is not supported.`);
+                    case 'aboutEachPrefix':
+                        throw new Error(`rdf:aboutEachPrefix is not supported.`);
+                    case 'li':
+                        throw new Error(`rdf:li on node elements are not supported.`);
+                }
+            }
+            else if (attributeKeyExpanded.uri === RdfXmlParser.XML) {
+                if (attributeKeyExpanded.local === 'lang') {
+                    activeTag.language = attributeValue === '' ? null : attributeValue.toLowerCase();
+                    continue;
+                }
+                else if (attributeKeyExpanded.local === 'base') {
+                    // SAX Parser does not expand xml:base, based on DOCTYPE, so we have to do it manually
+                    activeTag.baseIRI = RdfXmlParser.expandDoctypeEntity(attributeValue, this.saxStream._parser);
+                    continue;
+                }
+            }
+            // Interpret attributes at this point as properties on this node,
+            // but we ignore attributes that have no prefix or known expanded URI
+            if (attributeKeyExpanded.prefix !== 'xml' && attributeKeyExpanded.uri) {
+                predicates.push(this.uriToNamedNode(attributeKeyExpanded.uri + attributeKeyExpanded.local));
+                objects.push(attributeValue);
+            }
+        }
+        // Create the subject value _after_ all attributes have been processed
+        if (activeSubjectValue !== null) {
+            activeTag.subject = subjectValueBlank
+                ? this.dataFactory.blankNode(activeSubjectValue) : this.valueToUri(activeSubjectValue, activeTag);
+            if (claimSubjectNodeId) {
+                this.claimNodeId(activeTag.subject);
+            }
+        }
+        // Force the creation of a subject if it doesn't exist yet
+        if (!activeTag.subject) {
+            activeTag.subject = this.dataFactory.blankNode();
+        }
+        // Emit the type if we're at a typed node
+        if (typedNode) {
+            const type = this.uriToNamedNode(tagExpanded.uri + tagExpanded.local);
+            this.emitTriple(activeTag.subject, this.dataFactory.namedNode(RdfXmlParser.RDF + 'type'), type, parentTag ? parentTag.reifiedStatementId : null);
+        }
+        if (parentTag) {
+            // If the parent tag defined a predicate, add the current tag as property value
+            if (parentTag.predicate) {
+                if (parentTag.childrenCollectionSubject) {
+                    // RDF:List-based properties
+                    const linkTerm = this.dataFactory.blankNode();
+                    // Emit <x> <p> <current-chain> OR <previous-chain> <rdf:rest> <current-chain>
+                    this.emitTriple(parentTag.childrenCollectionSubject, parentTag.childrenCollectionPredicate, linkTerm, parentTag.reifiedStatementId);
+                    // Emit <current-chain> <rdf:first> value
+                    this.emitTriple(linkTerm, this.dataFactory.namedNode(RdfXmlParser.RDF + 'first'), activeTag.subject, activeTag.reifiedStatementId);
+                    // Store <current-chain> in the parent node
+                    parentTag.childrenCollectionSubject = linkTerm;
+                    parentTag.childrenCollectionPredicate = this.dataFactory.namedNode(RdfXmlParser.RDF + 'rest');
+                }
+                else { // !parentTag.predicateEmitted
+                    // Set-based properties
+                    this.emitTriple(parentTag.subject, parentTag.predicate, activeTag.subject, parentTag.reifiedStatementId);
+                    // Emit pending properties on the parent tag that had no defined subject yet.
+                    for (let i = 0; i < parentTag.predicateSubPredicates.length; i++) {
+                        this.emitTriple(activeTag.subject, parentTag.predicateSubPredicates[i], parentTag.predicateSubObjects[i], null);
+                    }
+                    // Cleanup so we don't emit them again when the parent tag is closed
+                    parentTag.predicateSubPredicates = [];
+                    parentTag.predicateSubObjects = [];
+                    parentTag.predicateEmitted = true;
+                }
+            }
+            // Emit all collected triples
+            for (let i = 0; i < predicates.length; i++) {
+                const object = this.dataFactory.literal(objects[i], activeTag.datatype || activeTag.language);
+                this.emitTriple(activeTag.subject, predicates[i], object, parentTag.reifiedStatementId);
+            }
+            // Emit the rdf:type as named node instead of literal
+            if (explicitType) {
+                this.emitTriple(activeTag.subject, this.dataFactory.namedNode(RdfXmlParser.RDF + 'type'), this.uriToNamedNode(explicitType), null);
+            }
+        }
+    }
+    /**
+     * Handle the given property element in property-mode.
+     * @param {QualifiedTag} tag A SAX tag.
+     * @param {IActiveTag} activeTag The currently active tag.
+     * @param {IActiveTag} parentTag The parent tag or null.
+     */
+    onTagProperty(tag, activeTag, parentTag) {
+        const tagExpanded = RdfXmlParser.expandPrefixedTerm(tag.name, activeTag.ns);
+        activeTag.childrenParseType = ParseType.RESOURCE;
+        activeTag.subject = parentTag.subject; // Inherit parent subject
+        if (tagExpanded.uri === RdfXmlParser.RDF && tagExpanded.local === 'li') {
+            // Convert rdf:li to rdf:_x
+            if (!parentTag.listItemCounter) {
+                parentTag.listItemCounter = 1;
+            }
+            activeTag.predicate = this.uriToNamedNode(tagExpanded.uri + '_' + parentTag.listItemCounter++);
+        }
+        else {
+            activeTag.predicate = this.uriToNamedNode(tagExpanded.uri + tagExpanded.local);
+        }
+        // Check forbidden property element names
+        if (tagExpanded.uri === RdfXmlParser.RDF
+            && RdfXmlParser.FORBIDDEN_PROPERTY_ELEMENTS.indexOf(tagExpanded.local) >= 0) {
+            throw new Error(`Illegal property element name: ${tagExpanded.local}`);
+        }
+        activeTag.predicateSubPredicates = [];
+        activeTag.predicateSubObjects = [];
+        let parseType = false;
+        let attributedProperty = false;
+        // Collect all attributes as triples
+        // Assign subject value only after all attributes have been processed, because baseIRI may change the final val
+        let activeSubSubjectValue = null;
+        let subSubjectValueBlank = true;
+        const predicates = [];
+        const objects = [];
+        for (const propertyAttributeKey in tag.attributes) {
+            const propertyAttributeValue = tag.attributes[propertyAttributeKey];
+            const propertyAttributeKeyExpanded = RdfXmlParser
+                .expandPrefixedTerm(propertyAttributeKey, activeTag.ns);
+            if (propertyAttributeKeyExpanded.uri === RdfXmlParser.RDF) {
+                switch (propertyAttributeKeyExpanded.local) {
+                    case 'resource':
+                        if (activeSubSubjectValue) {
+                            throw new Error(`Found both rdf:resource (${propertyAttributeValue}) and rdf:nodeID (${activeSubSubjectValue}).`);
+                        }
+                        if (parseType) {
+                            throw new Error(`rdf:parseType is not allowed on property elements with rdf:resource (${propertyAttributeValue})`);
+                        }
+                        activeTag.hadChildren = true;
+                        activeSubSubjectValue = propertyAttributeValue;
+                        subSubjectValueBlank = false;
+                        continue;
+                    case 'datatype':
+                        if (attributedProperty) {
+                            throw new Error(`Found both non-rdf:* property attributes and rdf:datatype (${propertyAttributeValue}).`);
+                        }
+                        if (parseType) {
+                            throw new Error(`rdf:parseType is not allowed on property elements with rdf:datatype (${propertyAttributeValue})`);
+                        }
+                        activeTag.datatype = this.valueToUri(propertyAttributeValue, activeTag);
+                        continue;
+                    case 'nodeID':
+                        if (attributedProperty) {
+                            throw new Error(`Found both non-rdf:* property attributes and rdf:nodeID (${propertyAttributeValue}).`);
+                        }
+                        if (activeTag.hadChildren) {
+                            throw new Error(`Found both rdf:resource and rdf:nodeID (${propertyAttributeValue}).`);
+                        }
+                        if (parseType) {
+                            throw new Error(`rdf:parseType is not allowed on property elements with rdf:nodeID (${propertyAttributeValue})`);
+                        }
+                        this.validateNcname(propertyAttributeValue);
+                        activeTag.hadChildren = true;
+                        activeSubSubjectValue = propertyAttributeValue;
+                        subSubjectValueBlank = true;
+                        continue;
+                    case 'bagID':
+                        throw new Error(`rdf:bagID is not supported.`);
+                    case 'parseType':
+                        // Validation
+                        if (attributedProperty) {
+                            throw new Error(`rdf:parseType is not allowed when non-rdf:* property attributes are present`);
+                        }
+                        if (activeTag.datatype) {
+                            throw new Error(`rdf:parseType is not allowed on property elements with rdf:datatype (${activeTag.datatype.value})`);
+                        }
+                        if (activeSubSubjectValue) {
+                            throw new Error(`rdf:parseType is not allowed on property elements with rdf:nodeID or rdf:resource (${activeSubSubjectValue})`);
+                        }
+                        if (propertyAttributeValue === 'Resource') {
+                            parseType = true;
+                            activeTag.childrenParseType = ParseType.PROPERTY;
+                            // Turn this property element into a node element
+                            const nestedBNode = this.dataFactory.blankNode();
+                            this.emitTriple(activeTag.subject, activeTag.predicate, nestedBNode, activeTag.reifiedStatementId);
+                            activeTag.subject = nestedBNode;
+                            activeTag.predicate = null;
+                        }
+                        else if (propertyAttributeValue === 'Collection') {
+                            parseType = true;
+                            // Interpret children as being part of an rdf:List
+                            activeTag.hadChildren = true;
+                            activeTag.childrenCollectionSubject = activeTag.subject;
+                            activeTag.childrenCollectionPredicate = activeTag.predicate;
+                            subSubjectValueBlank = false;
+                        }
+                        else if (propertyAttributeValue === 'Literal') {
+                            parseType = true;
+                            // Interpret children as being part of a literal string
+                            activeTag.childrenTagsToString = true;
+                            activeTag.childrenStringTags = [];
+                        }
+                        continue;
+                    case 'ID':
+                        this.validateNcname(propertyAttributeValue);
+                        activeTag.reifiedStatementId = this.valueToUri('#' + propertyAttributeValue, activeTag);
+                        this.claimNodeId(activeTag.reifiedStatementId);
+                        continue;
+                }
+            }
+            else if (propertyAttributeKeyExpanded.uri === RdfXmlParser.XML
+                && propertyAttributeKeyExpanded.local === 'lang') {
+                activeTag.language = propertyAttributeValue === ''
+                    ? null : propertyAttributeValue.toLowerCase();
+                continue;
+            }
+            // Interpret attributes at this point as properties via implicit blank nodes on the property,
+            // but we ignore attributes that have no prefix or known expanded URI
+            if (propertyAttributeKeyExpanded.prefix !== 'xml' && propertyAttributeKeyExpanded.uri) {
+                if (parseType || activeTag.datatype) {
+                    throw new Error(`Found illegal rdf:* properties on property element with attribute: ${propertyAttributeValue}`);
+                }
+                activeTag.hadChildren = true;
+                attributedProperty = true;
+                predicates.push(this.uriToNamedNode(propertyAttributeKeyExpanded.uri + propertyAttributeKeyExpanded.local));
+                objects.push(this.dataFactory.literal(propertyAttributeValue, activeTag.datatype || activeTag.language));
+            }
+        }
+        // Create the subject value _after_ all attributes have been processed
+        if (activeSubSubjectValue !== null) {
+            const subjectParent = activeTag.subject;
+            activeTag.subject = subSubjectValueBlank
+                ? this.dataFactory.blankNode(activeSubSubjectValue) : this.valueToUri(activeSubSubjectValue, activeTag);
+            this.emitTriple(subjectParent, activeTag.predicate, activeTag.subject, activeTag.reifiedStatementId);
+            // Emit our buffered triples
+            for (let i = 0; i < predicates.length; i++) {
+                this.emitTriple(activeTag.subject, predicates[i], objects[i], null);
+            }
+            activeTag.predicateEmitted = true;
+        }
+        else if (subSubjectValueBlank) {
+            // The current property element has no defined subject
+            // Let's buffer the properties until the child node defines a subject,
+            // or if the tag closes.
+            activeTag.predicateSubPredicates = predicates;
+            activeTag.predicateSubObjects = objects;
+            activeTag.predicateEmitted = false;
+        }
+    }
+    /**
+     * Emit the given triple to the stream.
+     * @param {Term} subject A subject term.
+     * @param {Term} predicate A predicate term.
+     * @param {Term} object An object term.
+     * @param {Term} statementId An optional resource that identifies the triple.
+     *                           If truthy, then the given triple will also be emitted reified.
+     */
+    emitTriple(subject, predicate, object, statementId) {
+        this.push(this.dataFactory.quad(subject, predicate, object, this.defaultGraph));
+        // Reify triple
+        if (statementId) {
+            this.push(this.dataFactory.quad(statementId, this.dataFactory.namedNode(RdfXmlParser.RDF + 'type'), this.dataFactory.namedNode(RdfXmlParser.RDF + 'Statement'), this.defaultGraph));
+            this.push(this.dataFactory.quad(statementId, this.dataFactory.namedNode(RdfXmlParser.RDF + 'subject'), subject, this.defaultGraph));
+            this.push(this.dataFactory.quad(statementId, this.dataFactory.namedNode(RdfXmlParser.RDF + 'predicate'), predicate, this.defaultGraph));
+            this.push(this.dataFactory.quad(statementId, this.dataFactory.namedNode(RdfXmlParser.RDF + 'object'), object, this.defaultGraph));
+        }
+    }
+    /**
+     * Register the given term as a node ID.
+     * If one was already registered, this will emit an error.
+     *
+     * This is used to check duplicate occurrences of rdf:ID in scope of the baseIRI.
+     * @param {Term} term An RDF term.
+     */
+    claimNodeId(term) {
+        if (this.nodeIds[term.value]) {
+            throw new Error(`Found multiple occurrences of rdf:ID='${term.value}'.`);
+        }
+        this.nodeIds[term.value] = true;
+    }
+    /**
+     * Handle the given text string.
+     * @param {string} text A parsed text string.
+     */
+    onText(text) {
+        const activeTag = this.activeTagStack.length
+            ? this.activeTagStack[this.activeTagStack.length - 1] : null;
+        if (activeTag) {
+            if (activeTag.childrenStringTags) {
+                activeTag.childrenStringTags.push(text);
+            }
+            else if (activeTag.predicate) {
+                activeTag.text = text;
+            }
+        }
+    }
+    /**
+     * Handle the closing of the last tag.
+     */
+    onCloseTag() {
+        const poppedTag = this.activeTagStack.pop();
+        // If we were converting a tag to a string, and the tag was not self-closing, close it here.
+        if (poppedTag.childrenStringEmitClosingTag) {
+            poppedTag.childrenStringTags.push(poppedTag.childrenStringEmitClosingTag);
+        }
+        // Set the literal value if we were collecting XML tags to string
+        if (poppedTag.childrenTagsToString) {
+            poppedTag.datatype = this.dataFactory.namedNode(RdfXmlParser.RDF + 'XMLLiteral');
+            poppedTag.text = poppedTag.childrenStringTags.join('');
+            poppedTag.hadChildren = false; // Force a literal triple to be emitted hereafter
+        }
+        if (poppedTag.childrenCollectionSubject) {
+            // Terminate the rdf:List
+            this.emitTriple(poppedTag.childrenCollectionSubject, poppedTag.childrenCollectionPredicate, this.dataFactory.namedNode(RdfXmlParser.RDF + 'nil'), poppedTag.reifiedStatementId);
+        }
+        else if (poppedTag.predicate) {
+            if (!poppedTag.hadChildren && poppedTag.childrenParseType !== ParseType.PROPERTY) {
+                // Property element contains text
+                this.emitTriple(poppedTag.subject, poppedTag.predicate, this.dataFactory.literal(poppedTag.text || '', poppedTag.datatype || poppedTag.language), poppedTag.reifiedStatementId);
+            }
+            else if (!poppedTag.predicateEmitted) {
+                // Emit remaining properties on an anonymous property element
+                const subject = this.dataFactory.blankNode();
+                this.emitTriple(poppedTag.subject, poppedTag.predicate, subject, poppedTag.reifiedStatementId);
+                for (let i = 0; i < poppedTag.predicateSubPredicates.length; i++) {
+                    this.emitTriple(subject, poppedTag.predicateSubPredicates[i], poppedTag.predicateSubObjects[i], null);
+                }
+            }
+        }
+    }
+    /**
+     * Fetch local DOCTYPE ENTITY's and make the parser recognise them.
+     * @param {string} doctype The read doctype.
+     */
+    onDoctype(doctype) {
+        doctype.replace(/<!ENTITY ([^ ]+) "([^"]+)" *>/g, (match, prefix, uri) => {
+            this.saxStream._parser.ENTITIES[prefix] = uri;
+            return '';
+        });
+    }
+}
+// Regex for valid IRIs
+RdfXmlParser.IRI_REGEX = /^([A-Za-z][A-Za-z0-9+-.]*):[^ "<>{}|\\\[\]`]*$/;
+RdfXmlParser.MIME_TYPE = 'application/rdf+xml';
+RdfXmlParser.RDF = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#';
+RdfXmlParser.XML = 'http://www.w3.org/XML/1998/namespace';
+RdfXmlParser.XMLNS = 'http://www.w3.org/2000/xmlns/';
+RdfXmlParser.DEFAULT_NS = {
+    xml: RdfXmlParser.XML,
+};
+RdfXmlParser.FORBIDDEN_NODE_ELEMENTS = [
+    'RDF',
+    'ID',
+    'about',
+    'bagID',
+    'parseType',
+    'resource',
+    'nodeID',
+    'li',
+    'aboutEach',
+    'aboutEachPrefix',
+];
+RdfXmlParser.FORBIDDEN_PROPERTY_ELEMENTS = [
+    'Description',
+    'RDF',
+    'ID',
+    'about',
+    'bagID',
+    'parseType',
+    'resource',
+    'nodeID',
+    'aboutEach',
+    'aboutEachPrefix',
+];
+// tslint:disable-next-line:max-line-length
+RdfXmlParser.NCNAME_MATCHER = /^([A-Za-z\xC0-\xD6\xD8-\xF6\u{F8}-\u{2FF}\u{370}-\u{37D}\u{37F}-\u{1FFF}\u{200C}-\u{200D}\u{2070}-\u{218F}\u{2C00}-\u{2FEF}\u{3001}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFFD}\u{10000}-\u{EFFFF}_])([A-Za-z\xC0-\xD6\xD8-\xF6\u{F8}-\u{2FF}\u{370}-\u{37D}\u{37F}-\u{1FFF}\u{200C}-\u{200D}\u{2070}-\u{218F}\u{2C00}-\u{2FEF}\u{3001}-\u{D7FF}\u{F900}-\u{FDCF}\u{FDF0}-\u{FFFD}\u{10000}-\u{EFFFF}_\-.0-9#xB7\u{0300}-\u{036F}\u{203F}-\u{2040}])*$/u;
+exports.RdfXmlParser = RdfXmlParser;
+var ParseType;
+(function (ParseType) {
+    ParseType[ParseType["RESOURCE"] = 0] = "RESOURCE";
+    ParseType[ParseType["PROPERTY"] = 1] = "PROPERTY";
+})(ParseType = exports.ParseType || (exports.ParseType = {}));
+
+},{"@rdfjs/data-model":1,"relative-to-absolute-iri":69,"sax":72,"stream":73}],55:[function(require,module,exports){
 module.exports = require('./lib/_stream_duplex.js');
 
-},{"./lib/_stream_duplex.js":44}],44:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":56}],56:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -5693,7 +9402,7 @@ Duplex.prototype._destroy = function (err, cb) {
 
   pna.nextTick(cb, err);
 };
-},{"./_stream_readable":46,"./_stream_writable":48,"core-util-is":12,"inherits":15,"process-nextick-args":41}],45:[function(require,module,exports){
+},{"./_stream_readable":58,"./_stream_writable":60,"core-util-is":12,"inherits":15,"process-nextick-args":51}],57:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -5741,7 +9450,7 @@ function PassThrough(options) {
 PassThrough.prototype._transform = function (chunk, encoding, cb) {
   cb(null, chunk);
 };
-},{"./_stream_transform":47,"core-util-is":12,"inherits":15}],46:[function(require,module,exports){
+},{"./_stream_transform":59,"core-util-is":12,"inherits":15}],58:[function(require,module,exports){
 (function (process,global){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -6763,7 +10472,7 @@ function indexOf(xs, x) {
   return -1;
 }
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{"./_stream_duplex":44,"./internal/streams/BufferList":49,"./internal/streams/destroy":50,"./internal/streams/stream":51,"_process":42,"core-util-is":12,"events":13,"inherits":15,"isarray":17,"process-nextick-args":41,"safe-buffer":59,"string_decoder/":52,"util":10}],47:[function(require,module,exports){
+},{"./_stream_duplex":56,"./internal/streams/BufferList":61,"./internal/streams/destroy":62,"./internal/streams/stream":63,"_process":52,"core-util-is":12,"events":13,"inherits":15,"isarray":17,"process-nextick-args":51,"safe-buffer":71,"string_decoder/":64,"util":10}],59:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -6978,7 +10687,7 @@ function done(stream, er, data) {
 
   return stream.push(null);
 }
-},{"./_stream_duplex":44,"core-util-is":12,"inherits":15}],48:[function(require,module,exports){
+},{"./_stream_duplex":56,"core-util-is":12,"inherits":15}],60:[function(require,module,exports){
 (function (process,global,setImmediate){
 // Copyright Joyent, Inc. and other Node contributors.
 //
@@ -7668,7 +11377,7 @@ Writable.prototype._destroy = function (err, cb) {
   cb(err);
 };
 }).call(this,require('_process'),typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {},require("timers").setImmediate)
-},{"./_stream_duplex":44,"./internal/streams/destroy":50,"./internal/streams/stream":51,"_process":42,"core-util-is":12,"inherits":15,"process-nextick-args":41,"safe-buffer":59,"timers":61,"util-deprecate":62}],49:[function(require,module,exports){
+},{"./_stream_duplex":56,"./internal/streams/destroy":62,"./internal/streams/stream":63,"_process":52,"core-util-is":12,"inherits":15,"process-nextick-args":51,"safe-buffer":71,"timers":75,"util-deprecate":76}],61:[function(require,module,exports){
 'use strict';
 
 function _classCallCheck(instance, Constructor) { if (!(instance instanceof Constructor)) { throw new TypeError("Cannot call a class as a function"); } }
@@ -7748,7 +11457,7 @@ if (util && util.inspect && util.inspect.custom) {
     return this.constructor.name + ' ' + obj;
   };
 }
-},{"safe-buffer":59,"util":10}],50:[function(require,module,exports){
+},{"safe-buffer":71,"util":10}],62:[function(require,module,exports){
 'use strict';
 
 /*<replacement>*/
@@ -7823,10 +11532,10 @@ module.exports = {
   destroy: destroy,
   undestroy: undestroy
 };
-},{"process-nextick-args":41}],51:[function(require,module,exports){
+},{"process-nextick-args":51}],63:[function(require,module,exports){
 module.exports = require('events').EventEmitter;
 
-},{"events":13}],52:[function(require,module,exports){
+},{"events":13}],64:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8123,10 +11832,10 @@ function simpleWrite(buf) {
 function simpleEnd(buf) {
   return buf && buf.length ? this.write(buf) : '';
 }
-},{"safe-buffer":59}],53:[function(require,module,exports){
+},{"safe-buffer":71}],65:[function(require,module,exports){
 module.exports = require('./readable').PassThrough
 
-},{"./readable":54}],54:[function(require,module,exports){
+},{"./readable":66}],66:[function(require,module,exports){
 exports = module.exports = require('./lib/_stream_readable.js');
 exports.Stream = exports;
 exports.Readable = exports;
@@ -8135,13 +11844,13 @@ exports.Duplex = require('./lib/_stream_duplex.js');
 exports.Transform = require('./lib/_stream_transform.js');
 exports.PassThrough = require('./lib/_stream_passthrough.js');
 
-},{"./lib/_stream_duplex.js":44,"./lib/_stream_passthrough.js":45,"./lib/_stream_readable.js":46,"./lib/_stream_transform.js":47,"./lib/_stream_writable.js":48}],55:[function(require,module,exports){
+},{"./lib/_stream_duplex.js":56,"./lib/_stream_passthrough.js":57,"./lib/_stream_readable.js":58,"./lib/_stream_transform.js":59,"./lib/_stream_writable.js":60}],67:[function(require,module,exports){
 module.exports = require('./readable').Transform
 
-},{"./readable":54}],56:[function(require,module,exports){
+},{"./readable":66}],68:[function(require,module,exports){
 module.exports = require('./lib/_stream_writable.js');
 
-},{"./lib/_stream_writable.js":48}],57:[function(require,module,exports){
+},{"./lib/_stream_writable.js":60}],69:[function(require,module,exports){
 "use strict";
 function __export(m) {
     for (var p in m) if (!exports.hasOwnProperty(p)) exports[p] = m[p];
@@ -8149,7 +11858,7 @@ function __export(m) {
 Object.defineProperty(exports, "__esModule", { value: true });
 __export(require("./lib/Resolve"));
 
-},{"./lib/Resolve":58}],58:[function(require,module,exports){
+},{"./lib/Resolve":70}],70:[function(require,module,exports){
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 /**
@@ -8361,7 +12070,7 @@ function isCharacterAllowedAfterRelativePathSegment(character) {
     return !character || character === '#' || character === '?' || character === '/';
 }
 
-},{}],59:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 /* eslint-disable node/no-deprecated-api */
 var buffer = require('buffer')
 var Buffer = buffer.Buffer
@@ -8425,7 +12134,1576 @@ SafeBuffer.allocUnsafeSlow = function (size) {
   return buffer.SlowBuffer(size)
 }
 
-},{"buffer":11}],60:[function(require,module,exports){
+},{"buffer":11}],72:[function(require,module,exports){
+(function (Buffer){
+;(function (sax) { // wrapper for non-node envs
+  sax.parser = function (strict, opt) { return new SAXParser(strict, opt) }
+  sax.SAXParser = SAXParser
+  sax.SAXStream = SAXStream
+  sax.createStream = createStream
+
+  // When we pass the MAX_BUFFER_LENGTH position, start checking for buffer overruns.
+  // When we check, schedule the next check for MAX_BUFFER_LENGTH - (max(buffer lengths)),
+  // since that's the earliest that a buffer overrun could occur.  This way, checks are
+  // as rare as required, but as often as necessary to ensure never crossing this bound.
+  // Furthermore, buffers are only tested at most once per write(), so passing a very
+  // large string into write() might have undesirable effects, but this is manageable by
+  // the caller, so it is assumed to be safe.  Thus, a call to write() may, in the extreme
+  // edge case, result in creating at most one complete copy of the string passed in.
+  // Set to Infinity to have unlimited buffers.
+  sax.MAX_BUFFER_LENGTH = 64 * 1024
+
+  var buffers = [
+    'comment', 'sgmlDecl', 'textNode', 'tagName', 'doctype',
+    'procInstName', 'procInstBody', 'entity', 'attribName',
+    'attribValue', 'cdata', 'script'
+  ]
+
+  sax.EVENTS = [
+    'text',
+    'processinginstruction',
+    'sgmldeclaration',
+    'doctype',
+    'comment',
+    'opentagstart',
+    'attribute',
+    'opentag',
+    'closetag',
+    'opencdata',
+    'cdata',
+    'closecdata',
+    'error',
+    'end',
+    'ready',
+    'script',
+    'opennamespace',
+    'closenamespace'
+  ]
+
+  function SAXParser (strict, opt) {
+    if (!(this instanceof SAXParser)) {
+      return new SAXParser(strict, opt)
+    }
+
+    var parser = this
+    clearBuffers(parser)
+    parser.q = parser.c = ''
+    parser.bufferCheckPosition = sax.MAX_BUFFER_LENGTH
+    parser.opt = opt || {}
+    parser.opt.lowercase = parser.opt.lowercase || parser.opt.lowercasetags
+    parser.looseCase = parser.opt.lowercase ? 'toLowerCase' : 'toUpperCase'
+    parser.tags = []
+    parser.closed = parser.closedRoot = parser.sawRoot = false
+    parser.tag = parser.error = null
+    parser.strict = !!strict
+    parser.noscript = !!(strict || parser.opt.noscript)
+    parser.state = S.BEGIN
+    parser.strictEntities = parser.opt.strictEntities
+    parser.ENTITIES = parser.strictEntities ? Object.create(sax.XML_ENTITIES) : Object.create(sax.ENTITIES)
+    parser.attribList = []
+
+    // namespaces form a prototype chain.
+    // it always points at the current tag,
+    // which protos to its parent tag.
+    if (parser.opt.xmlns) {
+      parser.ns = Object.create(rootNS)
+    }
+
+    // mostly just for error reporting
+    parser.trackPosition = parser.opt.position !== false
+    if (parser.trackPosition) {
+      parser.position = parser.line = parser.column = 0
+    }
+    emit(parser, 'onready')
+  }
+
+  if (!Object.create) {
+    Object.create = function (o) {
+      function F () {}
+      F.prototype = o
+      var newf = new F()
+      return newf
+    }
+  }
+
+  if (!Object.keys) {
+    Object.keys = function (o) {
+      var a = []
+      for (var i in o) if (o.hasOwnProperty(i)) a.push(i)
+      return a
+    }
+  }
+
+  function checkBufferLength (parser) {
+    var maxAllowed = Math.max(sax.MAX_BUFFER_LENGTH, 10)
+    var maxActual = 0
+    for (var i = 0, l = buffers.length; i < l; i++) {
+      var len = parser[buffers[i]].length
+      if (len > maxAllowed) {
+        // Text/cdata nodes can get big, and since they're buffered,
+        // we can get here under normal conditions.
+        // Avoid issues by emitting the text node now,
+        // so at least it won't get any bigger.
+        switch (buffers[i]) {
+          case 'textNode':
+            closeText(parser)
+            break
+
+          case 'cdata':
+            emitNode(parser, 'oncdata', parser.cdata)
+            parser.cdata = ''
+            break
+
+          case 'script':
+            emitNode(parser, 'onscript', parser.script)
+            parser.script = ''
+            break
+
+          default:
+            error(parser, 'Max buffer length exceeded: ' + buffers[i])
+        }
+      }
+      maxActual = Math.max(maxActual, len)
+    }
+    // schedule the next check for the earliest possible buffer overrun.
+    var m = sax.MAX_BUFFER_LENGTH - maxActual
+    parser.bufferCheckPosition = m + parser.position
+  }
+
+  function clearBuffers (parser) {
+    for (var i = 0, l = buffers.length; i < l; i++) {
+      parser[buffers[i]] = ''
+    }
+  }
+
+  function flushBuffers (parser) {
+    closeText(parser)
+    if (parser.cdata !== '') {
+      emitNode(parser, 'oncdata', parser.cdata)
+      parser.cdata = ''
+    }
+    if (parser.script !== '') {
+      emitNode(parser, 'onscript', parser.script)
+      parser.script = ''
+    }
+  }
+
+  SAXParser.prototype = {
+    end: function () { end(this) },
+    write: write,
+    resume: function () { this.error = null; return this },
+    close: function () { return this.write(null) },
+    flush: function () { flushBuffers(this) }
+  }
+
+  var Stream
+  try {
+    Stream = require('stream').Stream
+  } catch (ex) {
+    Stream = function () {}
+  }
+
+  var streamWraps = sax.EVENTS.filter(function (ev) {
+    return ev !== 'error' && ev !== 'end'
+  })
+
+  function createStream (strict, opt) {
+    return new SAXStream(strict, opt)
+  }
+
+  function SAXStream (strict, opt) {
+    if (!(this instanceof SAXStream)) {
+      return new SAXStream(strict, opt)
+    }
+
+    Stream.apply(this)
+
+    this._parser = new SAXParser(strict, opt)
+    this.writable = true
+    this.readable = true
+
+    var me = this
+
+    this._parser.onend = function () {
+      me.emit('end')
+    }
+
+    this._parser.onerror = function (er) {
+      me.emit('error', er)
+
+      // if didn't throw, then means error was handled.
+      // go ahead and clear error, so we can write again.
+      me._parser.error = null
+    }
+
+    this._decoder = null
+
+    streamWraps.forEach(function (ev) {
+      Object.defineProperty(me, 'on' + ev, {
+        get: function () {
+          return me._parser['on' + ev]
+        },
+        set: function (h) {
+          if (!h) {
+            me.removeAllListeners(ev)
+            me._parser['on' + ev] = h
+            return h
+          }
+          me.on(ev, h)
+        },
+        enumerable: true,
+        configurable: false
+      })
+    })
+  }
+
+  SAXStream.prototype = Object.create(Stream.prototype, {
+    constructor: {
+      value: SAXStream
+    }
+  })
+
+  SAXStream.prototype.write = function (data) {
+    if (typeof Buffer === 'function' &&
+      typeof Buffer.isBuffer === 'function' &&
+      Buffer.isBuffer(data)) {
+      if (!this._decoder) {
+        var SD = require('string_decoder').StringDecoder
+        this._decoder = new SD('utf8')
+      }
+      data = this._decoder.write(data)
+    }
+
+    this._parser.write(data.toString())
+    this.emit('data', data)
+    return true
+  }
+
+  SAXStream.prototype.end = function (chunk) {
+    if (chunk && chunk.length) {
+      this.write(chunk)
+    }
+    this._parser.end()
+    return true
+  }
+
+  SAXStream.prototype.on = function (ev, handler) {
+    var me = this
+    if (!me._parser['on' + ev] && streamWraps.indexOf(ev) !== -1) {
+      me._parser['on' + ev] = function () {
+        var args = arguments.length === 1 ? [arguments[0]] : Array.apply(null, arguments)
+        args.splice(0, 0, ev)
+        me.emit.apply(me, args)
+      }
+    }
+
+    return Stream.prototype.on.call(me, ev, handler)
+  }
+
+  // this really needs to be replaced with character classes.
+  // XML allows all manner of ridiculous numbers and digits.
+  var CDATA = '[CDATA['
+  var DOCTYPE = 'DOCTYPE'
+  var XML_NAMESPACE = 'http://www.w3.org/XML/1998/namespace'
+  var XMLNS_NAMESPACE = 'http://www.w3.org/2000/xmlns/'
+  var rootNS = { xml: XML_NAMESPACE, xmlns: XMLNS_NAMESPACE }
+
+  // http://www.w3.org/TR/REC-xml/#NT-NameStartChar
+  // This implementation works on strings, a single character at a time
+  // as such, it cannot ever support astral-plane characters (10000-EFFFF)
+  // without a significant breaking change to either this  parser, or the
+  // JavaScript language.  Implementation of an emoji-capable xml parser
+  // is left as an exercise for the reader.
+  var nameStart = /[:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD]/
+
+  var nameBody = /[:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u00B7\u0300-\u036F\u203F-\u2040.\d-]/
+
+  var entityStart = /[#:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD]/
+  var entityBody = /[#:_A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02FF\u0370-\u037D\u037F-\u1FFF\u200C-\u200D\u2070-\u218F\u2C00-\u2FEF\u3001-\uD7FF\uF900-\uFDCF\uFDF0-\uFFFD\u00B7\u0300-\u036F\u203F-\u2040.\d-]/
+
+  function isWhitespace (c) {
+    return c === ' ' || c === '\n' || c === '\r' || c === '\t'
+  }
+
+  function isQuote (c) {
+    return c === '"' || c === '\''
+  }
+
+  function isAttribEnd (c) {
+    return c === '>' || isWhitespace(c)
+  }
+
+  function isMatch (regex, c) {
+    return regex.test(c)
+  }
+
+  function notMatch (regex, c) {
+    return !isMatch(regex, c)
+  }
+
+  var S = 0
+  sax.STATE = {
+    BEGIN: S++, // leading byte order mark or whitespace
+    BEGIN_WHITESPACE: S++, // leading whitespace
+    TEXT: S++, // general stuff
+    TEXT_ENTITY: S++, // &amp and such.
+    OPEN_WAKA: S++, // <
+    SGML_DECL: S++, // <!BLARG
+    SGML_DECL_QUOTED: S++, // <!BLARG foo "bar
+    DOCTYPE: S++, // <!DOCTYPE
+    DOCTYPE_QUOTED: S++, // <!DOCTYPE "//blah
+    DOCTYPE_DTD: S++, // <!DOCTYPE "//blah" [ ...
+    DOCTYPE_DTD_QUOTED: S++, // <!DOCTYPE "//blah" [ "foo
+    COMMENT_STARTING: S++, // <!-
+    COMMENT: S++, // <!--
+    COMMENT_ENDING: S++, // <!-- blah -
+    COMMENT_ENDED: S++, // <!-- blah --
+    CDATA: S++, // <![CDATA[ something
+    CDATA_ENDING: S++, // ]
+    CDATA_ENDING_2: S++, // ]]
+    PROC_INST: S++, // <?hi
+    PROC_INST_BODY: S++, // <?hi there
+    PROC_INST_ENDING: S++, // <?hi "there" ?
+    OPEN_TAG: S++, // <strong
+    OPEN_TAG_SLASH: S++, // <strong /
+    ATTRIB: S++, // <a
+    ATTRIB_NAME: S++, // <a foo
+    ATTRIB_NAME_SAW_WHITE: S++, // <a foo _
+    ATTRIB_VALUE: S++, // <a foo=
+    ATTRIB_VALUE_QUOTED: S++, // <a foo="bar
+    ATTRIB_VALUE_CLOSED: S++, // <a foo="bar"
+    ATTRIB_VALUE_UNQUOTED: S++, // <a foo=bar
+    ATTRIB_VALUE_ENTITY_Q: S++, // <foo bar="&quot;"
+    ATTRIB_VALUE_ENTITY_U: S++, // <foo bar=&quot
+    CLOSE_TAG: S++, // </a
+    CLOSE_TAG_SAW_WHITE: S++, // </a   >
+    SCRIPT: S++, // <script> ...
+    SCRIPT_ENDING: S++ // <script> ... <
+  }
+
+  sax.XML_ENTITIES = {
+    'amp': '&',
+    'gt': '>',
+    'lt': '<',
+    'quot': '"',
+    'apos': "'"
+  }
+
+  sax.ENTITIES = {
+    'amp': '&',
+    'gt': '>',
+    'lt': '<',
+    'quot': '"',
+    'apos': "'",
+    'AElig': 198,
+    'Aacute': 193,
+    'Acirc': 194,
+    'Agrave': 192,
+    'Aring': 197,
+    'Atilde': 195,
+    'Auml': 196,
+    'Ccedil': 199,
+    'ETH': 208,
+    'Eacute': 201,
+    'Ecirc': 202,
+    'Egrave': 200,
+    'Euml': 203,
+    'Iacute': 205,
+    'Icirc': 206,
+    'Igrave': 204,
+    'Iuml': 207,
+    'Ntilde': 209,
+    'Oacute': 211,
+    'Ocirc': 212,
+    'Ograve': 210,
+    'Oslash': 216,
+    'Otilde': 213,
+    'Ouml': 214,
+    'THORN': 222,
+    'Uacute': 218,
+    'Ucirc': 219,
+    'Ugrave': 217,
+    'Uuml': 220,
+    'Yacute': 221,
+    'aacute': 225,
+    'acirc': 226,
+    'aelig': 230,
+    'agrave': 224,
+    'aring': 229,
+    'atilde': 227,
+    'auml': 228,
+    'ccedil': 231,
+    'eacute': 233,
+    'ecirc': 234,
+    'egrave': 232,
+    'eth': 240,
+    'euml': 235,
+    'iacute': 237,
+    'icirc': 238,
+    'igrave': 236,
+    'iuml': 239,
+    'ntilde': 241,
+    'oacute': 243,
+    'ocirc': 244,
+    'ograve': 242,
+    'oslash': 248,
+    'otilde': 245,
+    'ouml': 246,
+    'szlig': 223,
+    'thorn': 254,
+    'uacute': 250,
+    'ucirc': 251,
+    'ugrave': 249,
+    'uuml': 252,
+    'yacute': 253,
+    'yuml': 255,
+    'copy': 169,
+    'reg': 174,
+    'nbsp': 160,
+    'iexcl': 161,
+    'cent': 162,
+    'pound': 163,
+    'curren': 164,
+    'yen': 165,
+    'brvbar': 166,
+    'sect': 167,
+    'uml': 168,
+    'ordf': 170,
+    'laquo': 171,
+    'not': 172,
+    'shy': 173,
+    'macr': 175,
+    'deg': 176,
+    'plusmn': 177,
+    'sup1': 185,
+    'sup2': 178,
+    'sup3': 179,
+    'acute': 180,
+    'micro': 181,
+    'para': 182,
+    'middot': 183,
+    'cedil': 184,
+    'ordm': 186,
+    'raquo': 187,
+    'frac14': 188,
+    'frac12': 189,
+    'frac34': 190,
+    'iquest': 191,
+    'times': 215,
+    'divide': 247,
+    'OElig': 338,
+    'oelig': 339,
+    'Scaron': 352,
+    'scaron': 353,
+    'Yuml': 376,
+    'fnof': 402,
+    'circ': 710,
+    'tilde': 732,
+    'Alpha': 913,
+    'Beta': 914,
+    'Gamma': 915,
+    'Delta': 916,
+    'Epsilon': 917,
+    'Zeta': 918,
+    'Eta': 919,
+    'Theta': 920,
+    'Iota': 921,
+    'Kappa': 922,
+    'Lambda': 923,
+    'Mu': 924,
+    'Nu': 925,
+    'Xi': 926,
+    'Omicron': 927,
+    'Pi': 928,
+    'Rho': 929,
+    'Sigma': 931,
+    'Tau': 932,
+    'Upsilon': 933,
+    'Phi': 934,
+    'Chi': 935,
+    'Psi': 936,
+    'Omega': 937,
+    'alpha': 945,
+    'beta': 946,
+    'gamma': 947,
+    'delta': 948,
+    'epsilon': 949,
+    'zeta': 950,
+    'eta': 951,
+    'theta': 952,
+    'iota': 953,
+    'kappa': 954,
+    'lambda': 955,
+    'mu': 956,
+    'nu': 957,
+    'xi': 958,
+    'omicron': 959,
+    'pi': 960,
+    'rho': 961,
+    'sigmaf': 962,
+    'sigma': 963,
+    'tau': 964,
+    'upsilon': 965,
+    'phi': 966,
+    'chi': 967,
+    'psi': 968,
+    'omega': 969,
+    'thetasym': 977,
+    'upsih': 978,
+    'piv': 982,
+    'ensp': 8194,
+    'emsp': 8195,
+    'thinsp': 8201,
+    'zwnj': 8204,
+    'zwj': 8205,
+    'lrm': 8206,
+    'rlm': 8207,
+    'ndash': 8211,
+    'mdash': 8212,
+    'lsquo': 8216,
+    'rsquo': 8217,
+    'sbquo': 8218,
+    'ldquo': 8220,
+    'rdquo': 8221,
+    'bdquo': 8222,
+    'dagger': 8224,
+    'Dagger': 8225,
+    'bull': 8226,
+    'hellip': 8230,
+    'permil': 8240,
+    'prime': 8242,
+    'Prime': 8243,
+    'lsaquo': 8249,
+    'rsaquo': 8250,
+    'oline': 8254,
+    'frasl': 8260,
+    'euro': 8364,
+    'image': 8465,
+    'weierp': 8472,
+    'real': 8476,
+    'trade': 8482,
+    'alefsym': 8501,
+    'larr': 8592,
+    'uarr': 8593,
+    'rarr': 8594,
+    'darr': 8595,
+    'harr': 8596,
+    'crarr': 8629,
+    'lArr': 8656,
+    'uArr': 8657,
+    'rArr': 8658,
+    'dArr': 8659,
+    'hArr': 8660,
+    'forall': 8704,
+    'part': 8706,
+    'exist': 8707,
+    'empty': 8709,
+    'nabla': 8711,
+    'isin': 8712,
+    'notin': 8713,
+    'ni': 8715,
+    'prod': 8719,
+    'sum': 8721,
+    'minus': 8722,
+    'lowast': 8727,
+    'radic': 8730,
+    'prop': 8733,
+    'infin': 8734,
+    'ang': 8736,
+    'and': 8743,
+    'or': 8744,
+    'cap': 8745,
+    'cup': 8746,
+    'int': 8747,
+    'there4': 8756,
+    'sim': 8764,
+    'cong': 8773,
+    'asymp': 8776,
+    'ne': 8800,
+    'equiv': 8801,
+    'le': 8804,
+    'ge': 8805,
+    'sub': 8834,
+    'sup': 8835,
+    'nsub': 8836,
+    'sube': 8838,
+    'supe': 8839,
+    'oplus': 8853,
+    'otimes': 8855,
+    'perp': 8869,
+    'sdot': 8901,
+    'lceil': 8968,
+    'rceil': 8969,
+    'lfloor': 8970,
+    'rfloor': 8971,
+    'lang': 9001,
+    'rang': 9002,
+    'loz': 9674,
+    'spades': 9824,
+    'clubs': 9827,
+    'hearts': 9829,
+    'diams': 9830
+  }
+
+  Object.keys(sax.ENTITIES).forEach(function (key) {
+    var e = sax.ENTITIES[key]
+    var s = typeof e === 'number' ? String.fromCharCode(e) : e
+    sax.ENTITIES[key] = s
+  })
+
+  for (var s in sax.STATE) {
+    sax.STATE[sax.STATE[s]] = s
+  }
+
+  // shorthand
+  S = sax.STATE
+
+  function emit (parser, event, data) {
+    parser[event] && parser[event](data)
+  }
+
+  function emitNode (parser, nodeType, data) {
+    if (parser.textNode) closeText(parser)
+    emit(parser, nodeType, data)
+  }
+
+  function closeText (parser) {
+    parser.textNode = textopts(parser.opt, parser.textNode)
+    if (parser.textNode) emit(parser, 'ontext', parser.textNode)
+    parser.textNode = ''
+  }
+
+  function textopts (opt, text) {
+    if (opt.trim) text = text.trim()
+    if (opt.normalize) text = text.replace(/\s+/g, ' ')
+    return text
+  }
+
+  function error (parser, er) {
+    closeText(parser)
+    if (parser.trackPosition) {
+      er += '\nLine: ' + parser.line +
+        '\nColumn: ' + parser.column +
+        '\nChar: ' + parser.c
+    }
+    er = new Error(er)
+    parser.error = er
+    emit(parser, 'onerror', er)
+    return parser
+  }
+
+  function end (parser) {
+    if (parser.sawRoot && !parser.closedRoot) strictFail(parser, 'Unclosed root tag')
+    if ((parser.state !== S.BEGIN) &&
+      (parser.state !== S.BEGIN_WHITESPACE) &&
+      (parser.state !== S.TEXT)) {
+      error(parser, 'Unexpected end')
+    }
+    closeText(parser)
+    parser.c = ''
+    parser.closed = true
+    emit(parser, 'onend')
+    SAXParser.call(parser, parser.strict, parser.opt)
+    return parser
+  }
+
+  function strictFail (parser, message) {
+    if (typeof parser !== 'object' || !(parser instanceof SAXParser)) {
+      throw new Error('bad call to strictFail')
+    }
+    if (parser.strict) {
+      error(parser, message)
+    }
+  }
+
+  function newTag (parser) {
+    if (!parser.strict) parser.tagName = parser.tagName[parser.looseCase]()
+    var parent = parser.tags[parser.tags.length - 1] || parser
+    var tag = parser.tag = { name: parser.tagName, attributes: {} }
+
+    // will be overridden if tag contails an xmlns="foo" or xmlns:foo="bar"
+    if (parser.opt.xmlns) {
+      tag.ns = parent.ns
+    }
+    parser.attribList.length = 0
+    emitNode(parser, 'onopentagstart', tag)
+  }
+
+  function qname (name, attribute) {
+    var i = name.indexOf(':')
+    var qualName = i < 0 ? [ '', name ] : name.split(':')
+    var prefix = qualName[0]
+    var local = qualName[1]
+
+    // <x "xmlns"="http://foo">
+    if (attribute && name === 'xmlns') {
+      prefix = 'xmlns'
+      local = ''
+    }
+
+    return { prefix: prefix, local: local }
+  }
+
+  function attrib (parser) {
+    if (!parser.strict) {
+      parser.attribName = parser.attribName[parser.looseCase]()
+    }
+
+    if (parser.attribList.indexOf(parser.attribName) !== -1 ||
+      parser.tag.attributes.hasOwnProperty(parser.attribName)) {
+      parser.attribName = parser.attribValue = ''
+      return
+    }
+
+    if (parser.opt.xmlns) {
+      var qn = qname(parser.attribName, true)
+      var prefix = qn.prefix
+      var local = qn.local
+
+      if (prefix === 'xmlns') {
+        // namespace binding attribute. push the binding into scope
+        if (local === 'xml' && parser.attribValue !== XML_NAMESPACE) {
+          strictFail(parser,
+            'xml: prefix must be bound to ' + XML_NAMESPACE + '\n' +
+            'Actual: ' + parser.attribValue)
+        } else if (local === 'xmlns' && parser.attribValue !== XMLNS_NAMESPACE) {
+          strictFail(parser,
+            'xmlns: prefix must be bound to ' + XMLNS_NAMESPACE + '\n' +
+            'Actual: ' + parser.attribValue)
+        } else {
+          var tag = parser.tag
+          var parent = parser.tags[parser.tags.length - 1] || parser
+          if (tag.ns === parent.ns) {
+            tag.ns = Object.create(parent.ns)
+          }
+          tag.ns[local] = parser.attribValue
+        }
+      }
+
+      // defer onattribute events until all attributes have been seen
+      // so any new bindings can take effect. preserve attribute order
+      // so deferred events can be emitted in document order
+      parser.attribList.push([parser.attribName, parser.attribValue])
+    } else {
+      // in non-xmlns mode, we can emit the event right away
+      parser.tag.attributes[parser.attribName] = parser.attribValue
+      emitNode(parser, 'onattribute', {
+        name: parser.attribName,
+        value: parser.attribValue
+      })
+    }
+
+    parser.attribName = parser.attribValue = ''
+  }
+
+  function openTag (parser, selfClosing) {
+    if (parser.opt.xmlns) {
+      // emit namespace binding events
+      var tag = parser.tag
+
+      // add namespace info to tag
+      var qn = qname(parser.tagName)
+      tag.prefix = qn.prefix
+      tag.local = qn.local
+      tag.uri = tag.ns[qn.prefix] || ''
+
+      if (tag.prefix && !tag.uri) {
+        strictFail(parser, 'Unbound namespace prefix: ' +
+          JSON.stringify(parser.tagName))
+        tag.uri = qn.prefix
+      }
+
+      var parent = parser.tags[parser.tags.length - 1] || parser
+      if (tag.ns && parent.ns !== tag.ns) {
+        Object.keys(tag.ns).forEach(function (p) {
+          emitNode(parser, 'onopennamespace', {
+            prefix: p,
+            uri: tag.ns[p]
+          })
+        })
+      }
+
+      // handle deferred onattribute events
+      // Note: do not apply default ns to attributes:
+      //   http://www.w3.org/TR/REC-xml-names/#defaulting
+      for (var i = 0, l = parser.attribList.length; i < l; i++) {
+        var nv = parser.attribList[i]
+        var name = nv[0]
+        var value = nv[1]
+        var qualName = qname(name, true)
+        var prefix = qualName.prefix
+        var local = qualName.local
+        var uri = prefix === '' ? '' : (tag.ns[prefix] || '')
+        var a = {
+          name: name,
+          value: value,
+          prefix: prefix,
+          local: local,
+          uri: uri
+        }
+
+        // if there's any attributes with an undefined namespace,
+        // then fail on them now.
+        if (prefix && prefix !== 'xmlns' && !uri) {
+          strictFail(parser, 'Unbound namespace prefix: ' +
+            JSON.stringify(prefix))
+          a.uri = prefix
+        }
+        parser.tag.attributes[name] = a
+        emitNode(parser, 'onattribute', a)
+      }
+      parser.attribList.length = 0
+    }
+
+    parser.tag.isSelfClosing = !!selfClosing
+
+    // process the tag
+    parser.sawRoot = true
+    parser.tags.push(parser.tag)
+    emitNode(parser, 'onopentag', parser.tag)
+    if (!selfClosing) {
+      // special case for <script> in non-strict mode.
+      if (!parser.noscript && parser.tagName.toLowerCase() === 'script') {
+        parser.state = S.SCRIPT
+      } else {
+        parser.state = S.TEXT
+      }
+      parser.tag = null
+      parser.tagName = ''
+    }
+    parser.attribName = parser.attribValue = ''
+    parser.attribList.length = 0
+  }
+
+  function closeTag (parser) {
+    if (!parser.tagName) {
+      strictFail(parser, 'Weird empty close tag.')
+      parser.textNode += '</>'
+      parser.state = S.TEXT
+      return
+    }
+
+    if (parser.script) {
+      if (parser.tagName !== 'script') {
+        parser.script += '</' + parser.tagName + '>'
+        parser.tagName = ''
+        parser.state = S.SCRIPT
+        return
+      }
+      emitNode(parser, 'onscript', parser.script)
+      parser.script = ''
+    }
+
+    // first make sure that the closing tag actually exists.
+    // <a><b></c></b></a> will close everything, otherwise.
+    var t = parser.tags.length
+    var tagName = parser.tagName
+    if (!parser.strict) {
+      tagName = tagName[parser.looseCase]()
+    }
+    var closeTo = tagName
+    while (t--) {
+      var close = parser.tags[t]
+      if (close.name !== closeTo) {
+        // fail the first time in strict mode
+        strictFail(parser, 'Unexpected close tag')
+      } else {
+        break
+      }
+    }
+
+    // didn't find it.  we already failed for strict, so just abort.
+    if (t < 0) {
+      strictFail(parser, 'Unmatched closing tag: ' + parser.tagName)
+      parser.textNode += '</' + parser.tagName + '>'
+      parser.state = S.TEXT
+      return
+    }
+    parser.tagName = tagName
+    var s = parser.tags.length
+    while (s-- > t) {
+      var tag = parser.tag = parser.tags.pop()
+      parser.tagName = parser.tag.name
+      emitNode(parser, 'onclosetag', parser.tagName)
+
+      var x = {}
+      for (var i in tag.ns) {
+        x[i] = tag.ns[i]
+      }
+
+      var parent = parser.tags[parser.tags.length - 1] || parser
+      if (parser.opt.xmlns && tag.ns !== parent.ns) {
+        // remove namespace bindings introduced by tag
+        Object.keys(tag.ns).forEach(function (p) {
+          var n = tag.ns[p]
+          emitNode(parser, 'onclosenamespace', { prefix: p, uri: n })
+        })
+      }
+    }
+    if (t === 0) parser.closedRoot = true
+    parser.tagName = parser.attribValue = parser.attribName = ''
+    parser.attribList.length = 0
+    parser.state = S.TEXT
+  }
+
+  function parseEntity (parser) {
+    var entity = parser.entity
+    var entityLC = entity.toLowerCase()
+    var num
+    var numStr = ''
+
+    if (parser.ENTITIES[entity]) {
+      return parser.ENTITIES[entity]
+    }
+    if (parser.ENTITIES[entityLC]) {
+      return parser.ENTITIES[entityLC]
+    }
+    entity = entityLC
+    if (entity.charAt(0) === '#') {
+      if (entity.charAt(1) === 'x') {
+        entity = entity.slice(2)
+        num = parseInt(entity, 16)
+        numStr = num.toString(16)
+      } else {
+        entity = entity.slice(1)
+        num = parseInt(entity, 10)
+        numStr = num.toString(10)
+      }
+    }
+    entity = entity.replace(/^0+/, '')
+    if (isNaN(num) || numStr.toLowerCase() !== entity) {
+      strictFail(parser, 'Invalid character entity')
+      return '&' + parser.entity + ';'
+    }
+
+    return String.fromCodePoint(num)
+  }
+
+  function beginWhiteSpace (parser, c) {
+    if (c === '<') {
+      parser.state = S.OPEN_WAKA
+      parser.startTagPosition = parser.position
+    } else if (!isWhitespace(c)) {
+      // have to process this as a text node.
+      // weird, but happens.
+      strictFail(parser, 'Non-whitespace before first tag.')
+      parser.textNode = c
+      parser.state = S.TEXT
+    }
+  }
+
+  function charAt (chunk, i) {
+    var result = ''
+    if (i < chunk.length) {
+      result = chunk.charAt(i)
+    }
+    return result
+  }
+
+  function write (chunk) {
+    var parser = this
+    if (this.error) {
+      throw this.error
+    }
+    if (parser.closed) {
+      return error(parser,
+        'Cannot write after close. Assign an onready handler.')
+    }
+    if (chunk === null) {
+      return end(parser)
+    }
+    if (typeof chunk === 'object') {
+      chunk = chunk.toString()
+    }
+    var i = 0
+    var c = ''
+    while (true) {
+      c = charAt(chunk, i++)
+      parser.c = c
+
+      if (!c) {
+        break
+      }
+
+      if (parser.trackPosition) {
+        parser.position++
+        if (c === '\n') {
+          parser.line++
+          parser.column = 0
+        } else {
+          parser.column++
+        }
+      }
+
+      switch (parser.state) {
+        case S.BEGIN:
+          parser.state = S.BEGIN_WHITESPACE
+          if (c === '\uFEFF') {
+            continue
+          }
+          beginWhiteSpace(parser, c)
+          continue
+
+        case S.BEGIN_WHITESPACE:
+          beginWhiteSpace(parser, c)
+          continue
+
+        case S.TEXT:
+          if (parser.sawRoot && !parser.closedRoot) {
+            var starti = i - 1
+            while (c && c !== '<' && c !== '&') {
+              c = charAt(chunk, i++)
+              if (c && parser.trackPosition) {
+                parser.position++
+                if (c === '\n') {
+                  parser.line++
+                  parser.column = 0
+                } else {
+                  parser.column++
+                }
+              }
+            }
+            parser.textNode += chunk.substring(starti, i - 1)
+          }
+          if (c === '<' && !(parser.sawRoot && parser.closedRoot && !parser.strict)) {
+            parser.state = S.OPEN_WAKA
+            parser.startTagPosition = parser.position
+          } else {
+            if (!isWhitespace(c) && (!parser.sawRoot || parser.closedRoot)) {
+              strictFail(parser, 'Text data outside of root node.')
+            }
+            if (c === '&') {
+              parser.state = S.TEXT_ENTITY
+            } else {
+              parser.textNode += c
+            }
+          }
+          continue
+
+        case S.SCRIPT:
+          // only non-strict
+          if (c === '<') {
+            parser.state = S.SCRIPT_ENDING
+          } else {
+            parser.script += c
+          }
+          continue
+
+        case S.SCRIPT_ENDING:
+          if (c === '/') {
+            parser.state = S.CLOSE_TAG
+          } else {
+            parser.script += '<' + c
+            parser.state = S.SCRIPT
+          }
+          continue
+
+        case S.OPEN_WAKA:
+          // either a /, ?, !, or text is coming next.
+          if (c === '!') {
+            parser.state = S.SGML_DECL
+            parser.sgmlDecl = ''
+          } else if (isWhitespace(c)) {
+            // wait for it...
+          } else if (isMatch(nameStart, c)) {
+            parser.state = S.OPEN_TAG
+            parser.tagName = c
+          } else if (c === '/') {
+            parser.state = S.CLOSE_TAG
+            parser.tagName = ''
+          } else if (c === '?') {
+            parser.state = S.PROC_INST
+            parser.procInstName = parser.procInstBody = ''
+          } else {
+            strictFail(parser, 'Unencoded <')
+            // if there was some whitespace, then add that in.
+            if (parser.startTagPosition + 1 < parser.position) {
+              var pad = parser.position - parser.startTagPosition
+              c = new Array(pad).join(' ') + c
+            }
+            parser.textNode += '<' + c
+            parser.state = S.TEXT
+          }
+          continue
+
+        case S.SGML_DECL:
+          if ((parser.sgmlDecl + c).toUpperCase() === CDATA) {
+            emitNode(parser, 'onopencdata')
+            parser.state = S.CDATA
+            parser.sgmlDecl = ''
+            parser.cdata = ''
+          } else if (parser.sgmlDecl + c === '--') {
+            parser.state = S.COMMENT
+            parser.comment = ''
+            parser.sgmlDecl = ''
+          } else if ((parser.sgmlDecl + c).toUpperCase() === DOCTYPE) {
+            parser.state = S.DOCTYPE
+            if (parser.doctype || parser.sawRoot) {
+              strictFail(parser,
+                'Inappropriately located doctype declaration')
+            }
+            parser.doctype = ''
+            parser.sgmlDecl = ''
+          } else if (c === '>') {
+            emitNode(parser, 'onsgmldeclaration', parser.sgmlDecl)
+            parser.sgmlDecl = ''
+            parser.state = S.TEXT
+          } else if (isQuote(c)) {
+            parser.state = S.SGML_DECL_QUOTED
+            parser.sgmlDecl += c
+          } else {
+            parser.sgmlDecl += c
+          }
+          continue
+
+        case S.SGML_DECL_QUOTED:
+          if (c === parser.q) {
+            parser.state = S.SGML_DECL
+            parser.q = ''
+          }
+          parser.sgmlDecl += c
+          continue
+
+        case S.DOCTYPE:
+          if (c === '>') {
+            parser.state = S.TEXT
+            emitNode(parser, 'ondoctype', parser.doctype)
+            parser.doctype = true // just remember that we saw it.
+          } else {
+            parser.doctype += c
+            if (c === '[') {
+              parser.state = S.DOCTYPE_DTD
+            } else if (isQuote(c)) {
+              parser.state = S.DOCTYPE_QUOTED
+              parser.q = c
+            }
+          }
+          continue
+
+        case S.DOCTYPE_QUOTED:
+          parser.doctype += c
+          if (c === parser.q) {
+            parser.q = ''
+            parser.state = S.DOCTYPE
+          }
+          continue
+
+        case S.DOCTYPE_DTD:
+          parser.doctype += c
+          if (c === ']') {
+            parser.state = S.DOCTYPE
+          } else if (isQuote(c)) {
+            parser.state = S.DOCTYPE_DTD_QUOTED
+            parser.q = c
+          }
+          continue
+
+        case S.DOCTYPE_DTD_QUOTED:
+          parser.doctype += c
+          if (c === parser.q) {
+            parser.state = S.DOCTYPE_DTD
+            parser.q = ''
+          }
+          continue
+
+        case S.COMMENT:
+          if (c === '-') {
+            parser.state = S.COMMENT_ENDING
+          } else {
+            parser.comment += c
+          }
+          continue
+
+        case S.COMMENT_ENDING:
+          if (c === '-') {
+            parser.state = S.COMMENT_ENDED
+            parser.comment = textopts(parser.opt, parser.comment)
+            if (parser.comment) {
+              emitNode(parser, 'oncomment', parser.comment)
+            }
+            parser.comment = ''
+          } else {
+            parser.comment += '-' + c
+            parser.state = S.COMMENT
+          }
+          continue
+
+        case S.COMMENT_ENDED:
+          if (c !== '>') {
+            strictFail(parser, 'Malformed comment')
+            // allow <!-- blah -- bloo --> in non-strict mode,
+            // which is a comment of " blah -- bloo "
+            parser.comment += '--' + c
+            parser.state = S.COMMENT
+          } else {
+            parser.state = S.TEXT
+          }
+          continue
+
+        case S.CDATA:
+          if (c === ']') {
+            parser.state = S.CDATA_ENDING
+          } else {
+            parser.cdata += c
+          }
+          continue
+
+        case S.CDATA_ENDING:
+          if (c === ']') {
+            parser.state = S.CDATA_ENDING_2
+          } else {
+            parser.cdata += ']' + c
+            parser.state = S.CDATA
+          }
+          continue
+
+        case S.CDATA_ENDING_2:
+          if (c === '>') {
+            if (parser.cdata) {
+              emitNode(parser, 'oncdata', parser.cdata)
+            }
+            emitNode(parser, 'onclosecdata')
+            parser.cdata = ''
+            parser.state = S.TEXT
+          } else if (c === ']') {
+            parser.cdata += ']'
+          } else {
+            parser.cdata += ']]' + c
+            parser.state = S.CDATA
+          }
+          continue
+
+        case S.PROC_INST:
+          if (c === '?') {
+            parser.state = S.PROC_INST_ENDING
+          } else if (isWhitespace(c)) {
+            parser.state = S.PROC_INST_BODY
+          } else {
+            parser.procInstName += c
+          }
+          continue
+
+        case S.PROC_INST_BODY:
+          if (!parser.procInstBody && isWhitespace(c)) {
+            continue
+          } else if (c === '?') {
+            parser.state = S.PROC_INST_ENDING
+          } else {
+            parser.procInstBody += c
+          }
+          continue
+
+        case S.PROC_INST_ENDING:
+          if (c === '>') {
+            emitNode(parser, 'onprocessinginstruction', {
+              name: parser.procInstName,
+              body: parser.procInstBody
+            })
+            parser.procInstName = parser.procInstBody = ''
+            parser.state = S.TEXT
+          } else {
+            parser.procInstBody += '?' + c
+            parser.state = S.PROC_INST_BODY
+          }
+          continue
+
+        case S.OPEN_TAG:
+          if (isMatch(nameBody, c)) {
+            parser.tagName += c
+          } else {
+            newTag(parser)
+            if (c === '>') {
+              openTag(parser)
+            } else if (c === '/') {
+              parser.state = S.OPEN_TAG_SLASH
+            } else {
+              if (!isWhitespace(c)) {
+                strictFail(parser, 'Invalid character in tag name')
+              }
+              parser.state = S.ATTRIB
+            }
+          }
+          continue
+
+        case S.OPEN_TAG_SLASH:
+          if (c === '>') {
+            openTag(parser, true)
+            closeTag(parser)
+          } else {
+            strictFail(parser, 'Forward-slash in opening tag not followed by >')
+            parser.state = S.ATTRIB
+          }
+          continue
+
+        case S.ATTRIB:
+          // haven't read the attribute name yet.
+          if (isWhitespace(c)) {
+            continue
+          } else if (c === '>') {
+            openTag(parser)
+          } else if (c === '/') {
+            parser.state = S.OPEN_TAG_SLASH
+          } else if (isMatch(nameStart, c)) {
+            parser.attribName = c
+            parser.attribValue = ''
+            parser.state = S.ATTRIB_NAME
+          } else {
+            strictFail(parser, 'Invalid attribute name')
+          }
+          continue
+
+        case S.ATTRIB_NAME:
+          if (c === '=') {
+            parser.state = S.ATTRIB_VALUE
+          } else if (c === '>') {
+            strictFail(parser, 'Attribute without value')
+            parser.attribValue = parser.attribName
+            attrib(parser)
+            openTag(parser)
+          } else if (isWhitespace(c)) {
+            parser.state = S.ATTRIB_NAME_SAW_WHITE
+          } else if (isMatch(nameBody, c)) {
+            parser.attribName += c
+          } else {
+            strictFail(parser, 'Invalid attribute name')
+          }
+          continue
+
+        case S.ATTRIB_NAME_SAW_WHITE:
+          if (c === '=') {
+            parser.state = S.ATTRIB_VALUE
+          } else if (isWhitespace(c)) {
+            continue
+          } else {
+            strictFail(parser, 'Attribute without value')
+            parser.tag.attributes[parser.attribName] = ''
+            parser.attribValue = ''
+            emitNode(parser, 'onattribute', {
+              name: parser.attribName,
+              value: ''
+            })
+            parser.attribName = ''
+            if (c === '>') {
+              openTag(parser)
+            } else if (isMatch(nameStart, c)) {
+              parser.attribName = c
+              parser.state = S.ATTRIB_NAME
+            } else {
+              strictFail(parser, 'Invalid attribute name')
+              parser.state = S.ATTRIB
+            }
+          }
+          continue
+
+        case S.ATTRIB_VALUE:
+          if (isWhitespace(c)) {
+            continue
+          } else if (isQuote(c)) {
+            parser.q = c
+            parser.state = S.ATTRIB_VALUE_QUOTED
+          } else {
+            strictFail(parser, 'Unquoted attribute value')
+            parser.state = S.ATTRIB_VALUE_UNQUOTED
+            parser.attribValue = c
+          }
+          continue
+
+        case S.ATTRIB_VALUE_QUOTED:
+          if (c !== parser.q) {
+            if (c === '&') {
+              parser.state = S.ATTRIB_VALUE_ENTITY_Q
+            } else {
+              parser.attribValue += c
+            }
+            continue
+          }
+          attrib(parser)
+          parser.q = ''
+          parser.state = S.ATTRIB_VALUE_CLOSED
+          continue
+
+        case S.ATTRIB_VALUE_CLOSED:
+          if (isWhitespace(c)) {
+            parser.state = S.ATTRIB
+          } else if (c === '>') {
+            openTag(parser)
+          } else if (c === '/') {
+            parser.state = S.OPEN_TAG_SLASH
+          } else if (isMatch(nameStart, c)) {
+            strictFail(parser, 'No whitespace between attributes')
+            parser.attribName = c
+            parser.attribValue = ''
+            parser.state = S.ATTRIB_NAME
+          } else {
+            strictFail(parser, 'Invalid attribute name')
+          }
+          continue
+
+        case S.ATTRIB_VALUE_UNQUOTED:
+          if (!isAttribEnd(c)) {
+            if (c === '&') {
+              parser.state = S.ATTRIB_VALUE_ENTITY_U
+            } else {
+              parser.attribValue += c
+            }
+            continue
+          }
+          attrib(parser)
+          if (c === '>') {
+            openTag(parser)
+          } else {
+            parser.state = S.ATTRIB
+          }
+          continue
+
+        case S.CLOSE_TAG:
+          if (!parser.tagName) {
+            if (isWhitespace(c)) {
+              continue
+            } else if (notMatch(nameStart, c)) {
+              if (parser.script) {
+                parser.script += '</' + c
+                parser.state = S.SCRIPT
+              } else {
+                strictFail(parser, 'Invalid tagname in closing tag.')
+              }
+            } else {
+              parser.tagName = c
+            }
+          } else if (c === '>') {
+            closeTag(parser)
+          } else if (isMatch(nameBody, c)) {
+            parser.tagName += c
+          } else if (parser.script) {
+            parser.script += '</' + parser.tagName
+            parser.tagName = ''
+            parser.state = S.SCRIPT
+          } else {
+            if (!isWhitespace(c)) {
+              strictFail(parser, 'Invalid tagname in closing tag')
+            }
+            parser.state = S.CLOSE_TAG_SAW_WHITE
+          }
+          continue
+
+        case S.CLOSE_TAG_SAW_WHITE:
+          if (isWhitespace(c)) {
+            continue
+          }
+          if (c === '>') {
+            closeTag(parser)
+          } else {
+            strictFail(parser, 'Invalid characters in closing tag')
+          }
+          continue
+
+        case S.TEXT_ENTITY:
+        case S.ATTRIB_VALUE_ENTITY_Q:
+        case S.ATTRIB_VALUE_ENTITY_U:
+          var returnState
+          var buffer
+          switch (parser.state) {
+            case S.TEXT_ENTITY:
+              returnState = S.TEXT
+              buffer = 'textNode'
+              break
+
+            case S.ATTRIB_VALUE_ENTITY_Q:
+              returnState = S.ATTRIB_VALUE_QUOTED
+              buffer = 'attribValue'
+              break
+
+            case S.ATTRIB_VALUE_ENTITY_U:
+              returnState = S.ATTRIB_VALUE_UNQUOTED
+              buffer = 'attribValue'
+              break
+          }
+
+          if (c === ';') {
+            parser[buffer] += parseEntity(parser)
+            parser.entity = ''
+            parser.state = returnState
+          } else if (isMatch(parser.entity.length ? entityBody : entityStart, c)) {
+            parser.entity += c
+          } else {
+            strictFail(parser, 'Invalid character in entity name')
+            parser[buffer] += '&' + parser.entity + c
+            parser.entity = ''
+            parser.state = returnState
+          }
+
+          continue
+
+        default:
+          throw new Error(parser, 'Unknown state: ' + parser.state)
+      }
+    } // while
+
+    if (parser.position >= parser.bufferCheckPosition) {
+      checkBufferLength(parser)
+    }
+    return parser
+  }
+
+  /*! http://mths.be/fromcodepoint v0.1.0 by @mathias */
+  /* istanbul ignore next */
+  if (!String.fromCodePoint) {
+    (function () {
+      var stringFromCharCode = String.fromCharCode
+      var floor = Math.floor
+      var fromCodePoint = function () {
+        var MAX_SIZE = 0x4000
+        var codeUnits = []
+        var highSurrogate
+        var lowSurrogate
+        var index = -1
+        var length = arguments.length
+        if (!length) {
+          return ''
+        }
+        var result = ''
+        while (++index < length) {
+          var codePoint = Number(arguments[index])
+          if (
+            !isFinite(codePoint) || // `NaN`, `+Infinity`, or `-Infinity`
+            codePoint < 0 || // not a valid Unicode code point
+            codePoint > 0x10FFFF || // not a valid Unicode code point
+            floor(codePoint) !== codePoint // not an integer
+          ) {
+            throw RangeError('Invalid code point: ' + codePoint)
+          }
+          if (codePoint <= 0xFFFF) { // BMP code point
+            codeUnits.push(codePoint)
+          } else { // Astral code point; split in surrogate halves
+            // http://mathiasbynens.be/notes/javascript-encoding#surrogate-formulae
+            codePoint -= 0x10000
+            highSurrogate = (codePoint >> 10) + 0xD800
+            lowSurrogate = (codePoint % 0x400) + 0xDC00
+            codeUnits.push(highSurrogate, lowSurrogate)
+          }
+          if (index + 1 === length || codeUnits.length > MAX_SIZE) {
+            result += stringFromCharCode.apply(null, codeUnits)
+            codeUnits.length = 0
+          }
+        }
+        return result
+      }
+      /* istanbul ignore next */
+      if (Object.defineProperty) {
+        Object.defineProperty(String, 'fromCodePoint', {
+          value: fromCodePoint,
+          configurable: true,
+          writable: true
+        })
+      } else {
+        String.fromCodePoint = fromCodePoint
+      }
+    }())
+  }
+})(typeof exports === 'undefined' ? this.sax = {} : exports)
+
+}).call(this,require("buffer").Buffer)
+},{"buffer":11,"stream":73,"string_decoder":74}],73:[function(require,module,exports){
 // Copyright Joyent, Inc. and other Node contributors.
 //
 // Permission is hereby granted, free of charge, to any person obtaining a
@@ -8554,7 +13832,9 @@ Stream.prototype.pipe = function(dest, options) {
   return dest;
 };
 
-},{"events":13,"inherits":15,"readable-stream/duplex.js":43,"readable-stream/passthrough.js":53,"readable-stream/readable.js":54,"readable-stream/transform.js":55,"readable-stream/writable.js":56}],61:[function(require,module,exports){
+},{"events":13,"inherits":15,"readable-stream/duplex.js":55,"readable-stream/passthrough.js":65,"readable-stream/readable.js":66,"readable-stream/transform.js":67,"readable-stream/writable.js":68}],74:[function(require,module,exports){
+arguments[4][64][0].apply(exports,arguments)
+},{"dup":64,"safe-buffer":71}],75:[function(require,module,exports){
 (function (setImmediate,clearImmediate){
 var nextTick = require('process/browser.js').nextTick;
 var apply = Function.prototype.apply;
@@ -8633,7 +13913,7 @@ exports.clearImmediate = typeof clearImmediate === "function" ? clearImmediate :
   delete immediateIds[id];
 };
 }).call(this,require("timers").setImmediate,require("timers").clearImmediate)
-},{"process/browser.js":42,"timers":61}],62:[function(require,module,exports){
+},{"process/browser.js":52,"timers":75}],76:[function(require,module,exports){
 (function (global){
 
 /**
@@ -8704,7 +13984,7 @@ function config (name) {
 }
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
-},{}],63:[function(require,module,exports){
+},{}],77:[function(require,module,exports){
 (function (global, factory) {
   typeof exports === 'object' && typeof module !== 'undefined' ? factory(exports) :
   typeof define === 'function' && define.amd ? define(['exports'], factory) :
@@ -9237,51 +14517,85 @@ function config (name) {
 
 })));
 
-},{}],64:[function(require,module,exports){
+},{}],78:[function(require,module,exports){
 "use strict";
 
 const JsonLdParser = require("jsonld-streaming-parser").JsonLdParser;
-/*
-  It should be strai
-// https://github.com/rdfjs/rdfxml-streaming-parser.js
+const N3 = require("n3");
 const RdfXmlParser = require("rdfxml-streaming-parser").RdfXmlParser;
-*/
 
 let repost = function(type, dataFromParser) {
-  //console.log(type, dataFromParser);
   self.postMessage({type: type, data: dataFromParser});
 }
 
+let ext2args = {
+  'trig':   'TriG',      // 'application/trig',
+  'ttl':    'Turtle',    // 'application/ttl'
+  'n3':     'Notation3', // 'text/n3', 'N3'
+  'nt':     'N-Triples',
+  'nq':     'N-Quads',
+  'nquads': 'N-Quads'
+};
+
 self.onmessage = function(event) {
   let url = event.data.url;
+  let aUrl = new URL(url);
+  let ext = aUrl.pathname.split('.').pop();
+  let parserArgs = {};
   var parser;
-  if (url.endsWith('jsonld')) {
-    parser = new JsonLdParser();
+
+  if (['jsonld', 'rdf', 'xml'].includes(ext)) {
+    if (['jsonld'].includes(ext)) {
+      parser = new JsonLdParser(parserArgs);
+    } else if (['rdf', 'xml'].includes(ext)) {
+      parser = new RdfXmlParser();
+    }
+    parser
+      .on('context', (data) => {repost('context', data)})
+      .on('data',    (data) => {self.postMessage(data)})
+      .on('error',   (data) => {repost('error', data)})
+      .on('end',     (data) => {repost('end', data)});
+    /*
+      // TODO figure out how to feed a stream to the parser
+      //   https://developer.mozilla.org/en-US/docs/Web/API/Body/body
+      // Is the problem that parser.import expects a NodeJS EventEmitter?
+      .then(response => response.body)
+      .then(body => body.getReader())
+      .then(stream => parser.import(stream))
+    */
+    fetch(url)
+      // Until streaming is solved, do the whole response at one go.
+      .then(response => response.text())
+      .then(text => {
+        parser.write(text);
+        parser.end();
+      })
+      .catch(console.error);
+  } else if (['nq', 'nquads', 'nt', 'n3','trig', 'ttl'].includes(ext)) {
+    parserArgs = ext2args[ext];
+    parser = new N3.Parser(parserArgs);
+
+    fetch(url)
+    // Until streaming is solved, do the whole response at one go.
+      .then(response => response.text())
+      .then(text => {
+        parser.parse(text, (error, quad, prefixes) => {
+          if (error) {
+            repost('error', error);
+          }
+          if (quad) {
+            self.postMessage(quad);
+          } else {
+            repost('end',{})
+          }
+        })
+      })
+      .catch(console.error);
+
   } else {
     throw new Error(`Not yet handling ${url} just .jsonld`);
   }
-   parser
-    .on('context', (data) => {repost('context', data)})
-    .on('data',    (data) => {self.postMessage(data)})
-    .on('error',   (data) => {repost('error', data)})
-    .on('end',     (data) => {repost('end', data)});
-  fetch(url)
-    // Until streaming is solved, do the whole response at one go.
-    .then(response => response.text())
-    .then(text => {
-      parser.write(text);
-      parser.end();
-    })
-    .catch(console.log);
-  /*
-    // TODO figure out how to feed a stream to the parser
-    //   https://developer.mozilla.org/en-US/docs/Web/API/Body/body
-    // Is the problem that parser.import expects a NodeJS EventEmitter?
-    .then(response => response.body)
-    .then(body => body.getReader())
-    .then(stream => parser.import(stream))
-  */
 }
 
 
-},{"jsonld-streaming-parser":22}]},{},[64]);
+},{"jsonld-streaming-parser":22,"n3":41,"rdfxml-streaming-parser":53}]},{},[78]);

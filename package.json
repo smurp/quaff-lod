@@ -1,6 +1,6 @@
 {
   "name": "quaff-lod",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "a streaming LOD worker",
   "main": "index.js",
   "scripts": {
@@ -13,7 +13,11 @@
   "keywords": [
     "lod",
     "json-ld",
-    "Web",
+    "TriG",
+    "Turtle",
+    "N-Quads",
+    "nq",
+    "ttl",
     "Worker",
     "streaming"
   ],
@@ -26,6 +30,8 @@
   "devDependencies": {
     "browserify": "^16.2.3",
     "jsonld-streaming-parser": "^1.1.0",
-    "nodemon": "^1.19.1"
+    "n3": "^1.1.1",
+    "nodemon": "^1.19.1",
+    "rdfxml-streaming-parser": "^1.2.4"
   }
 }
