@@ -3,6 +3,7 @@
 const JsonLdParser = require("jsonld-streaming-parser").JsonLdParser;
 const N3 = require("n3");
 const RdfXmlParser = require("rdfxml-streaming-parser").RdfXmlParser;
+const RDF_object = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
 
 let repost = function(type, dataFromParser) {
   self.postMessage({type: type, data: dataFromParser});
@@ -15,6 +16,36 @@ let ext2args = {
   'nt':     'N-Triples',
   'nq':     'N-Quads',
   'nquads': 'N-Quads'
+};
+
+// convert an N3 term to the same format as the jsonld and rdf terms
+let convertN3Term = (term) => {
+  var retval;
+  if (!term) {
+    return;
+  }
+  if (term.termType == 'NamedNode') {
+    retval = {
+      value: term.value
+      //,datatype: RDF_object
+    };
+  } else if (term.termType == 'Literal') {
+    retval = {
+      value: term.value
+    }
+    retval.datatype = term.datatypeString;
+    retval.language = term.language || '';
+  }
+  return retval;
+};
+
+let convertN3Quad = (quad) => {
+  return {
+    subject: convertN3Term(quad.subject),
+    predicate: convertN3Term(quad.predicate),
+    object: convertN3Term(quad.object),
+    graph: convertN3Term(quad.graph)
+  };
 };
 
 self.onmessage = function(event) {
@@ -54,9 +85,9 @@ self.onmessage = function(event) {
   } else if (['nq', 'nquads', 'nt', 'n3','trig', 'ttl'].includes(ext)) {
     parserArgs = ext2args[ext];
     parser = new N3.Parser(parserArgs);
-
+    let q;
     fetch(url)
-    // Until streaming is solved, do the whole response at one go.
+      // Until streaming is solved, do the whole response at one go.
       .then(response => response.text())
       .then(text => {
         parser.parse(text, (error, quad, prefixes) => {
@@ -64,7 +95,9 @@ self.onmessage = function(event) {
             repost('error', error);
           }
           if (quad) {
-            self.postMessage(quad);
+            var o = quad.object;
+            q = convertN3Quad(quad);
+            self.postMessage(q);
           } else {
             repost('end',{})
           }
