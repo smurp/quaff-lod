@@ -14574,6 +14574,18 @@ let convertN3Quad = (quad) => {
   };
 };
 
+
+let extractText = (response) => {
+  if (response.status !== 200) {
+    throw new Error(`${response.status} ${response.statusText}: ${response.url}`)
+  }
+  return response.text();
+};
+
+let repostError = (err) => {
+  repost('error', err.toString());
+};
+
 self.onmessage = function(event) {
   let url = event.data.url;
   let aUrl = new URL(url);
@@ -14601,13 +14613,13 @@ self.onmessage = function(event) {
       .then(stream => parser.import(stream))
     */
     fetch(url)
-      // Until streaming is solved, do the whole response at one go.
-      .then(response => response.text())
+    // Until streaming is solved, do the whole response at one go.
+      .then(extractText)
       .then(text => {
         parser.write(text);
         parser.end();
       })
-      .catch(console.error);
+      .catch(repostError);
   } else if (['nq', 'nquads', 'nt', 'n3','trig', 'ttl'].includes(ext)) {
     parserArgs.format = ext2args[ext];
     parserArgs.baseIRI = url;
@@ -14617,10 +14629,11 @@ self.onmessage = function(event) {
     let q;
     fetch(url)
       // Until streaming is solved, do the whole response at one go.
-      .then(response => response.text())
+      .then(extractText)
       .then(text => {
         parser.parse(text, (error, quad, prefixes) => {
           if (error) {
+            throw new Error("OINK");
             repost('error', error);
           }
           if (quad) {
@@ -14632,7 +14645,7 @@ self.onmessage = function(event) {
           }
         })
       })
-      .catch(console.error);
+      .catch(repostError);
 
   } else {
     throw new Error(`Not yet handling ${url} just .jsonld`);
