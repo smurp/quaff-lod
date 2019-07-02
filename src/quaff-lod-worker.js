@@ -35,11 +35,17 @@ let convertN3Term = (term) => {
     }
     retval.datatype = term.datatypeString;
     retval.language = term.language || '';
+  //} else if (term.termType == 'DefaultGraph') {
+  //  console.log("DefaultGraph term",term);
+  } else {
+    console.warn("term:", term);
+    throw new Error(`unhandled termType: ${term.termType}`);
   }
   return retval;
 };
 
 let convertN3Quad = (quad) => {
+  //console.table([quad]);
   return {
     subject: convertN3Term(quad.subject),
     predicate: convertN3Term(quad.predicate),
@@ -83,7 +89,10 @@ self.onmessage = function(event) {
       })
       .catch(console.error);
   } else if (['nq', 'nquads', 'nt', 'n3','trig', 'ttl'].includes(ext)) {
-    parserArgs = ext2args[ext];
+    parserArgs.format = ext2args[ext];
+    parserArgs.baseIRI = url;
+    parserArgs.documentIRI = url;
+    //console.warn(JSON.stringify(parserArgs))
     parser = new N3.Parser(parserArgs);
     let q;
     fetch(url)
