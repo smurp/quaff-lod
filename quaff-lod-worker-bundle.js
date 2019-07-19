@@ -14549,14 +14549,21 @@ let convertN3Term = (term) => {
       value: term.value
       //,datatype: RDF_object
     };
+  } else if (term.termType == 'BlankNode') {
+    retval = {
+      value: term.value
+    };
+  } else if (term.termType == 'DefaultGraph') {
+    //console.log("DefaultGraph term", term);
+    retval = {
+      value: term.value
+    };
   } else if (term.termType == 'Literal') {
     retval = {
       value: term.value
-    }
+    };
     retval.datatype = term.datatypeString;
     retval.language = term.language || '';
-  //} else if (term.termType == 'DefaultGraph') {
-  //  console.log("DefaultGraph term",term);
   } else {
     console.warn("term:", term);
     throw new Error(`unhandled termType: ${term.termType}`);
@@ -14633,7 +14640,7 @@ self.onmessage = function(event) {
       .then(text => {
         parser.parse(text, (error, quad, prefixes) => {
           if (error) {
-            throw new Error("OINK");
+            throw new Error(error.toString());
             repost('error', error);
           }
           if (quad) {
