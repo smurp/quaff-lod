@@ -14520,23 +14520,29 @@ function config (name) {
 },{}],78:[function(require,module,exports){
 "use strict";
 
+
 const JsonLdParser = require("jsonld-streaming-parser").JsonLdParser;
 const N3 = require("n3");
 const RdfXmlParser = require("rdfxml-streaming-parser").RdfXmlParser;
 const RDF_object = "http://www.w3.org/1999/02/22-rdf-syntax-ns#object";
 
-let repost = function(type, dataFromParser) {
-  self.postMessage({type: type, data: dataFromParser});
-}
-
-let ext2args = {
+let ext2args = { // mapping from extension to N3Parser format
   'trig':   'TriG',      // 'application/trig',
   'ttl':    'Turtle',    // 'application/ttl'
   'n3':     'Notation3', // 'text/n3', 'N3'
   'nt':     'N-Triples',
   'nq':     'N-Quads',
-  'nquads': 'N-Quads'
+  'nquads': 'N-Quads',
+  // not needed, but for completeness
+  'jsonld': 'JSON-LD',
+  'rdf':    'RDF',
+  'xml':    'XML'
 };
+let extensions = '.' + Object.keys(ext2args).join('|.')
+
+let repost = function(type, dataFromParser) {
+  self.postMessage({type: type, data: dataFromParser});
+}
 
 // convert an N3 term to the same format as the jsonld and rdf terms
 let convertN3Term = (term) => {
@@ -14581,7 +14587,6 @@ let convertN3Quad = (quad) => {
   };
 };
 
-
 let extractText = (response) => {
   if (response.status !== 200) {
     throw new Error(`${response.status} ${response.statusText}: ${response.url}`)
@@ -14594,15 +14599,27 @@ let repostError = (err) => {
 };
 
 self.onmessage = function(event) {
-  let url = event.data.url;
-  let aUrl = new URL(url);
-  let ext = aUrl.pathname.split('.').pop();
-  let parserArgs = {};
-  var parser;
+  /*
+    Usage:
+      worker.postMessage({url: aUri.toString()}); // load from a remote URL, ext selects parser
+      OR
+      worker.postMessage({ext: 'jsonld', data: data}); // load data, ext selects parser
+   */
+  let {
+    action,
+    url,
+    ext, theDataToRead
+  } = event.data;
+  if (url && !ext) {
+    let aUrl = new URL(url);
+    ext = aUrl.pathname.split('.').pop();
+  }
 
   if (['jsonld', 'rdf', 'xml'].includes(ext)) {
+    // These parsers share architecture
+    let parser;
     if (['jsonld'].includes(ext)) {
-      parser = new JsonLdParser(parserArgs);
+      parser = new JsonLdParser({});
     } else if (['rdf', 'xml'].includes(ext)) {
       parser = new RdfXmlParser();
     }
@@ -14619,45 +14636,66 @@ self.onmessage = function(event) {
       .then(body => body.getReader())
       .then(stream => parser.import(stream))
     */
-    fetch(url)
-    // Until streaming is solved, do the whole response at one go.
-      .then(extractText)
-      .then(text => {
-        parser.write(text);
-        parser.end();
-      })
-      .catch(repostError);
-  } else if (['nq', 'nquads', 'nt', 'n3','trig', 'ttl'].includes(ext)) {
-    parserArgs.format = ext2args[ext];
-    parserArgs.baseIRI = url;
-    parserArgs.documentIRI = url;
-    //console.warn(JSON.stringify(parserArgs))
-    parser = new N3.Parser(parserArgs);
-    let q;
-    fetch(url)
+    switch (action) {
+    case 'fetchUrl':
+      fetch(url)
       // Until streaming is solved, do the whole response at one go.
-      .then(extractText)
-      .then(text => {
-        parser.parse(text, (error, quad, prefixes) => {
-          if (error) {
-            throw new Error(error.toString());
-            repost('error', error);
-          }
-          if (quad) {
-            var o = quad.object;
-            q = convertN3Quad(quad);
-            self.postMessage(q);
-          } else {
-            repost('end',{})
-          }
+        .then(extractText)
+        .then(text => {
+          parser.write(text);
+          parser.end();
         })
-      })
-      .catch(repostError);
+        .catch(repostError);
+      break;
+    case 'readData':
+      parser.write(theDataToRead);
+      parser.end();
+      break;
+    default:
+      throw new Error(`action should be readData or fetchUrl`);
+    }
+
+  } else if (['nq', 'nquads', 'nt', 'n3','trig', 'ttl'].includes(ext)) {
+
+    const n3Parser = new N3.Parser({
+      format: ext2args[ext],
+      baseIRI: url,
+      documentIRI: url
+    });
+
+    let handleParse = (error, quad, prefixes) => {
+      if (error) {
+        throw new Error(error.toString());
+        repost('error', error);
+      }
+      let q;
+      if (quad) {
+        //var o = quad.object;
+        q = convertN3Quad(quad);
+        self.postMessage(q);
+      } else {
+        repost('end',{})
+      }
+    }
+
+    switch (action) {
+    case 'fetchUrl':
+      fetch(url)
+      // Until streaming is solved, do the whole response at one go.
+        .then(extractText)
+        .then(text => {n3Parser.parse(text, handleParse)})
+        .catch(repostError);
+      break;
+    case 'readData':
+      n3Parser.parse(theDataToRead, handleParse);
+      break;
+    default:
+      throw new Error(`action should be readData or fetchUrl`);
+    }
 
   } else {
-    throw new Error(`Not yet handling ${url} just .jsonld`);
+    throw new Error(`Not yet handling ${url} just ${extensions}`);
   }
 }
-
 
 },{"jsonld-streaming-parser":22,"n3":41,"rdfxml-streaming-parser":53}]},{},[78]);
