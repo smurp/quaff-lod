@@ -30,7 +30,6 @@ worker.postMessage({action: 'readData', ext: 'ttl', theDataToRead: ':s :p "helo 
 
 Although the parsers are streaming, a current issue is that this implementation is not :-/.
 
-
 ## All Hail
 
 Thanks to Ruben and Ruben for their great parsers!
