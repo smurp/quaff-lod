@@ -94,6 +94,9 @@ self.onmessage = function(event) {
     let aUrl = new URL(url);
     ext = aUrl.pathname.split('.').pop();
   }
+  if (!action && !theDataToRead) { // this is for backward compatibility
+    action = 'fetchUrl';
+  }
 
   if (['jsonld', 'rdf', 'xml'].includes(ext)) {
     // These parsers share architecture
